@@ -1,0 +1,29 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+fastapi = "*"
+structlog = "*"
+python-multipart = "*"
+jinja2 = "*"
+uvicorn = "*"
+gunicorn = "*"
+pychromecast = "*"
+pynng = "*"
+apscheduler = "*"
+sqlalchemy = "*"
+pytubefix = "*"
+alembic = "*"
+itsdangerous = "*"
+yt-dlp = "*"
+google-api-python-client = "*"
+httpx = "*"
+pydantic-settings = "*"
+
+[dev-packages]
+ruff = "*"
+
+[requires]
+python_version = "3.13"

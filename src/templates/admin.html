@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard - Karaoke App{% endblock %}
+
+{% block content %}
+<h2 class="text-center mb-4">Admin Dashboard</h2>
+
+<div id="admin-status-message">
+  {% include "admin_status_message.html" %}
+</div>
+
+<div class="mb-4">
+  <form method="post" action="/admin/playout/start" class="d-inline"
+        hx-post="/admin/playout/start" hx-target="#admin-status-message" hx-swap="innerHTML">
+    <button class="btn btn-success me-2" {% if is_playing %}disabled{% endif %}>Start Playout</button>
+  </form>
+  <form method="post" action="/admin/playout/skip" class="d-inline"
+        hx-post="/admin/playout/skip" hx-target="#admin-status-message" hx-swap="innerHTML">
+    <button class="btn btn-warning me-2" {% if not is_playing %}disabled{% endif %}>Skip Song</button>
+  </form>
+  <form method="post" action="/admin/playout/stop" class="d-inline"
+        hx-post="/admin/playout/stop" hx-target="#admin-status-message" hx-swap="innerHTML">
+    <button class="btn btn-danger me-2" {% if not is_playing %}disabled{% endif %}>Stop Playout</button>
+  </form>
+  <form method="post" action="/admin/queue/clear" class="d-inline"
+        hx-post="/admin/queue/clear" hx-target="#admin-status-message" hx-swap="innerHTML">
+    <button class="btn btn-secondary">Clear Queue</button>
+  </form>
+</div>
+
+<h3>Device Selection</h3>
+<form method="post" action="/admin/device/select" class="mb-4"
+      hx-post="/admin/device/select" hx-target="#admin-status-message" hx-swap="innerHTML">
+  <div class="row">
+    <div class="col-md-6">
+      <select name="device_id" class="form-select">
+        <option value="">Select a Chromecast device</option>
+        {% for device in devices %}
+        <option value="{{ device.uuid }}" {% if device.is_connected %}selected{% endif %}>
+          {{ device.name }} {% if device.is_connected %}(Connected){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6">
+      <button type="submit" class="btn btn-primary">Select Device</button>
+      <button type="button" class="btn btn-secondary" id="refresh-devices">
+        <span id="refresh-devices-spinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+        <span id="refresh-devices-text">Refresh Devices</span>
+      </button>
+    </div>
+  </div>
+</form>
+
+<div id="queue-container">
+  <h3>Current Queue</h3>
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>Position</th>
+        <th>Song</th>
+        <th>User</th>
+        <th>Added At</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in queue %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ item.video_title }}</td>
+        <td>{{ item.user_name }}</td>
+        <td>{{ item.added_at }}</td>
+        <td>
+          <form method="post" action="/queue/delete/{{ item.id }}" class="d-inline" 
+                hx-post="/queue/delete/{{ item.id }}" hx-target="#queue-container" hx-swap="innerHTML">
+            <button class="btn btn-danger btn-sm">Delete</button>
+          </form>
+          {% if loop.first %}
+          <form method="post" action="/admin/playout/skip" class="d-inline"
+                hx-post="/admin/playout/skip" hx-target="#queue-container" hx-swap="innerHTML">
+            <button class="btn btn-warning btn-sm">Skip</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted">No songs in queue.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const queueContainer = document.getElementById('queue-container');
+    const eventSource = new EventSource('/queue/stream');
+    const refreshDevicesBtn = document.getElementById('refresh-devices');
+    const refreshSpinner = document.getElementById('refresh-devices-spinner');
+    const refreshText = document.getElementById('refresh-devices-text');
+    
+    // Refresh devices button
+    refreshDevicesBtn.addEventListener('click', function() {
+      refreshDevicesBtn.disabled = true;
+      refreshSpinner.classList.remove('d-none');
+      refreshText.textContent = 'Refreshing...';
+      fetch('/admin/devices/refresh')
+        .then(response => response.json())
+        .then(data => {
+          refreshDevicesBtn.disabled = false;
+          refreshSpinner.classList.add('d-none');
+          refreshText.textContent = 'Refresh Devices';
+          if (data.success) {
+            location.reload();
+          } else {
+            alert('Failed to refresh devices: ' + data.error);
+          }
+        })
+        .catch(error => {
+          refreshDevicesBtn.disabled = false;
+          refreshSpinner.classList.add('d-none');
+          refreshText.textContent = 'Refresh Devices';
+          console.error('Error refreshing devices:', error);
+        });
+    });
+    
+    // Listen for queue updates
+    eventSource.onmessage = function(event) {
+      // When we get an update, refresh the queue content
+      fetch('/admin/queue/partial')
+        .then(response => response.text())
+        .then(html => {
+          queueContainer.innerHTML = html;
+        })
+        .catch(error => {
+          console.error('Error fetching queue:', error);
+        });
+    };
+    
+    // Handle errors
+    eventSource.onerror = function(error) {
+      console.error('EventSource error:', error);
+      eventSource.close();
+      // Try to reconnect after a delay
+      setTimeout(() => {
+        location.reload();
+      }, 5000);
+    };
+  });
+</script>
+{% endblock %} 

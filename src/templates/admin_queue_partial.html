@@ -1,0 +1,34 @@
+<h3>Current Queue</h3>
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Position</th>
+      <th>Song</th>
+      <th>User</th>
+      <th>Added At</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in queue %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ item.video_title }}</td>
+      <td>{{ item.user_name }}</td>
+      <td>{{ item.added_at }}</td>
+      <td>
+        <form method="post" action="/queue/delete/{{ item.id }}" class="d-inline">
+          <button class="btn btn-danger btn-sm">Delete</button>
+        </form>
+        {% if loop.first %}
+        <form method="post" action="/admin/playout/skip" class="d-inline">
+          <button class="btn btn-warning btn-sm">Skip</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="text-muted">No songs in queue.</td></tr>
+    {% endfor %}
+  </tbody>
+</table> 
