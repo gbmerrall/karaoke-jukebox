@@ -51,6 +51,10 @@ project-memory-bank/
 .ruff_cache/
 .flake8
 
+# Data directory
+data/*
+!data/.gitkeep
+
 # Logs
 *.log
 logs/ 
