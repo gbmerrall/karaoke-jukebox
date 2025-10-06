@@ -71,6 +71,23 @@ class ChromecastService:
         self.skip_requested = threading.Event()
         self.stop_requested = threading.Event()
 
+        # Main event loop reference for cross-thread async calls
+        self.main_loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """
+        Set the main event loop reference for cross-thread async calls.
+
+        This must be called during app startup from the main async context.
+        The loop reference allows the playout thread to schedule coroutines
+        on the main event loop using run_coroutine_threadsafe().
+
+        Args:
+            loop: The main asyncio event loop
+        """
+        self.main_loop = loop
+        logger.info("Main event loop reference set for ChromecastService")
+
     async def discover_devices(self, timeout: int = 10) -> List[Dict]:
         """
         Scan the network for Chromecast devices using CastBrowser with AsyncZeroconf.
@@ -431,12 +448,19 @@ class ChromecastService:
             return None
 
     def _get_queue_sync(self) -> List[Dict]:
-        """Synchronous wrapper to get queue from async function."""
-        try:
-            # Run async function in new event loop
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        """
+        Synchronous wrapper to get queue from async function.
 
+        Uses run_coroutine_threadsafe to schedule the coroutine on the main
+        event loop from the playout thread.
+        """
+        if not self.main_loop:
+            raise RuntimeError(
+                "ChromecastService not initialized - event loop not set. "
+                "Call set_event_loop() during app startup."
+            )
+
+        try:
             async def get_queue():
                 async with get_db() as db:
                     cursor = await db.execute(
@@ -445,19 +469,31 @@ class ChromecastService:
                     rows = await cursor.fetchall()
                     return [dict(row) for row in rows]
 
-            result = loop.run_until_complete(get_queue())
-            loop.close()
+            # Schedule coroutine on main event loop from this thread
+            future = asyncio.run_coroutine_threadsafe(get_queue(), self.main_loop)
+
+            # Wait for result with timeout
+            result = future.result(timeout=30)
             return result
+
         except Exception as e:
-            logger.error(f"Error getting queue: {e}")
+            logger.error(f"Error getting queue: {e}", exc_info=True)
             return []
 
     def _remove_from_queue_sync(self, queue_id: int):
-        """Synchronous wrapper to remove item from queue."""
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        """
+        Synchronous wrapper to remove item from queue.
 
+        Uses run_coroutine_threadsafe to schedule the coroutine on the main
+        event loop from the playout thread.
+        """
+        if not self.main_loop:
+            raise RuntimeError(
+                "ChromecastService not initialized - event loop not set. "
+                "Call set_event_loop() during app startup."
+            )
+
+        try:
             async def remove():
                 async with get_db() as db:
                     await db.execute("DELETE FROM queue WHERE id = ?", (queue_id,))
@@ -467,17 +503,29 @@ class ChromecastService:
                 from app.services.queue_manager import queue_manager
                 await queue_manager.broadcast_queue_update()
 
-            loop.run_until_complete(remove())
-            loop.close()
+            # Schedule coroutine on main event loop from this thread
+            future = asyncio.run_coroutine_threadsafe(remove(), self.main_loop)
+
+            # Wait for completion with timeout
+            future.result(timeout=30)
+
         except Exception as e:
-            logger.error(f"Error removing from queue: {e}")
+            logger.error(f"Error removing from queue: {e}", exc_info=True)
 
     def _update_status_sync(self, queue_id: int, status: str):
-        """Synchronous wrapper to update queue item status."""
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        """
+        Synchronous wrapper to update queue item status.
 
+        Uses run_coroutine_threadsafe to schedule the coroutine on the main
+        event loop from the playout thread.
+        """
+        if not self.main_loop:
+            raise RuntimeError(
+                "ChromecastService not initialized - event loop not set. "
+                "Call set_event_loop() during app startup."
+            )
+
+        try:
             async def update():
                 async with get_db() as db:
                     await db.execute(
@@ -489,10 +537,14 @@ class ChromecastService:
                 from app.services.queue_manager import queue_manager
                 await queue_manager.broadcast_queue_update()
 
-            loop.run_until_complete(update())
-            loop.close()
+            # Schedule coroutine on main event loop from this thread
+            future = asyncio.run_coroutine_threadsafe(update(), self.main_loop)
+
+            # Wait for completion with timeout
+            future.result(timeout=30)
+
         except Exception as e:
-            logger.error(f"Error updating status: {e}")
+            logger.error(f"Error updating status: {e}", exc_info=True)
 
 
 # Global instance

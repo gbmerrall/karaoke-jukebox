@@ -6,6 +6,7 @@ karaoke videos, queue them, and play through Chromecast with real-time
 queue updates via Server-Sent Events.
 """
 
+import asyncio
 import logging
 import sys
 import shutil
@@ -68,6 +69,10 @@ async def lifespan(app: FastAPI):
     reset_count = await queue_manager.reset_orphaned_items()
     if reset_count > 0:
         logger.info(f"Reset {reset_count} orphaned queue item(s)")
+
+    # Set event loop reference for chromecast service (for sync/async bridge)
+    from app.services.chromecast import chromecast_service
+    chromecast_service.set_event_loop(asyncio.get_running_loop())
 
     # Ensure data directories exist
     settings.get_videos_dir().mkdir(parents=True, exist_ok=True)
