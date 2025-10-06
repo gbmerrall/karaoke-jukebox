@@ -240,6 +240,33 @@ class QueueManager:
 
             return count
 
+    async def reset_orphaned_items(self) -> int:
+        """
+        Reset orphaned queue items on startup.
+
+        Sets all items with status='playing' back to status='queued'.
+        This handles cases where the app was stopped while items were playing.
+
+        Returns:
+            Number of items reset
+        """
+        async with get_db() as db:
+            cursor = await db.execute(
+                """
+                UPDATE queue
+                SET status = 'queued'
+                WHERE status = 'playing'
+                """
+            )
+            await db.commit()
+            count = cursor.rowcount
+
+            if count > 0:
+                logger.info(f"Reset {count} orphaned queue item(s) from 'playing' to 'queued'")
+                await self.broadcast_queue_update()
+
+            return count
+
     # SSE Broadcasting
 
     async def subscribe(self, username: str = None, is_admin: bool = False) -> AsyncGenerator[str, None]:

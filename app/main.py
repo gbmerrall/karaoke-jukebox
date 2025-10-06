@@ -64,6 +64,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
+    # Reset orphaned queue items (items stuck in 'playing' status from previous run)
+    reset_count = await queue_manager.reset_orphaned_items()
+    if reset_count > 0:
+        logger.info(f"Reset {reset_count} orphaned queue item(s)")
+
     # Ensure data directories exist
     settings.get_videos_dir().mkdir(parents=True, exist_ok=True)
     logger.info(f"Data directory: {settings.data_dir}")
