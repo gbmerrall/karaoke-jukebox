@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+
+{% block title %}Admin - Karaoke Jukebox{% endblock %}
+
+{% block content %}
+<!-- Admin Header -->
+<div class="mb-6">
+    <h1 class="text-3xl font-bold">Admin Control Panel</h1>
+    <p class="text-gray-500">Manage queue and control Chromecast playback</p>
+</div>
+
+<!-- Queue Section -->
+<div class="mb-6">
+    <div class="flex items-center justify-between mb-2">
+        <h2 class="text-2xl font-bold">Queue</h2>
+        <div class="flex gap-2">
+            <span class="badge badge-primary badge-lg" id="queue-count">{{ queue|length }} songs</span>
+            <button
+                class="btn btn-error btn-sm"
+                hx-post="/admin/queue/clear"
+                hx-confirm="Are you sure you want to clear the entire queue?"
+                hx-target="#admin-status"
+            >
+                Clear Queue
+            </button>
+        </div>
+    </div>
+
+    <!-- Queue Container (updated via SSE) -->
+    <div class="bg-base-100 rounded-lg shadow-lg p-4 min-h-[150px]">
+        <div
+            id="queue-content"
+            hx-ext="sse"
+            sse-connect="/queue/sse"
+            sse-swap="queue-update"
+        >
+            <!-- Initial queue loaded from server -->
+            {% include 'partials/admin_queue.html' %}
+        </div>
+    </div>
+</div>
+
+<!-- Chromecast Control Section -->
+<div class="mb-6">
+    <h2 class="text-2xl font-bold mb-4">Chromecast Control</h2>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Device Selection -->
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h3 class="card-title text-lg">Chromecast Device</h3>
+                <div id="scan-btn-tooltip">
+                    <button
+                        id="scan-btn"
+                        class="btn btn-primary w-full"
+                        hx-get="/admin/devices/scan"
+                        hx-target="#device-list"
+                        hx-swap="innerHTML"
+                        hx-indicator="#scan-spinner"
+                    >
+                        <span id="scan-text">Scan for Devices</span>
+                        <span id="scan-spinner" class="loading loading-spinner loading-sm htmx-indicator"></span>
+                    </button>
+                </div>
+                <div id="device-list" class="mt-2">
+                    <p class="text-sm text-gray-500">Click 'Scan for Devices' to find Chromecasts</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Playback Controls -->
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h3 class="card-title text-lg">Playback Controls</h3>
+                <div class="flex flex-col gap-2">
+                    <button
+                        id="start-playback-btn"
+                        class="btn btn-success"
+                        hx-post="/admin/playback/start"
+                        hx-target="#admin-status"
+                        disabled
+                    >
+                        ▶️ Start Playback
+                    </button>
+                    <button
+                        id="skip-song-btn"
+                        class="btn btn-warning"
+                        hx-post="/admin/playback/skip"
+                        hx-target="#admin-status"
+                        disabled
+                    >
+                        ⏭️ Skip Current Song
+                    </button>
+                    <button
+                        id="stop-playback-btn"
+                        class="btn btn-error"
+                        hx-post="/admin/playback/stop"
+                        hx-target="#admin-status"
+                        disabled
+                    >
+                        ⏹️ Stop Playback
+                    </button>
+                </div>
+                <p id="device-status" class="text-sm text-warning mt-2">No device selected</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Messages -->
+    <div id="admin-status" class="mt-4"></div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Update queue count when queue updates
+    document.body.addEventListener('htmx:afterSwap', function(event) {
+        if (event.detail.target.id === 'queue-content') {
+            // Count the number of queue items
+            const count = event.detail.target.querySelectorAll('.queue-item').length;
+            const badge = document.getElementById('queue-count');
+            if (badge) {
+                badge.textContent = count + (count === 1 ? ' song' : ' songs');
+            }
+        }
+    });
+
+    // Handle admin action responses (playback controls, device scan, clear queue)
+    document.body.addEventListener('htmx:afterSwap', function(event) {
+        if (event.detail.target.id === 'admin-status') {
+            try {
+                const response = JSON.parse(event.detail.xhr.response);
+                if (response.success) {
+                    event.detail.target.innerHTML = '<div class="alert alert-success"><span>' + response.message + '</span></div>';
+
+                    // Track playback state changes
+                    if (response.message.includes('Playback started')) {
+                        isPlaying = true;
+                        updateScanButton();
+                    } else if (response.message.includes('Playback stopped')) {
+                        isPlaying = false;
+                        updateScanButton();
+                    } else if (response.message.includes('Queue is empty')) {
+                        // Can't start playback with empty queue
+                        isPlaying = false;
+                        updateScanButton();
+                    }
+                } else {
+                    event.detail.target.innerHTML = '<div class="alert alert-error"><span>' + response.message + '</span></div>';
+                }
+                // Clear status after 3 seconds
+                setTimeout(() => {
+                    event.detail.target.innerHTML = '';
+                }, 3000);
+            } catch (e) {
+                console.error('Error handling response:', e);
+            }
+        }
+    });
+
+    // Track selected device and playback state
+    let selectedDeviceUuid = null;
+    let isPlaying = false;
+
+    // Handle device scan responses
+    document.body.addEventListener('htmx:afterSwap', function(event) {
+        if (event.detail.target.id === 'device-list') {
+            try {
+                const response = JSON.parse(event.detail.xhr.response);
+                if (response.success && response.devices && response.devices.length > 0) {
+                    let html = '<div class="space-y-2 mt-4">';
+                    response.devices.forEach(device => {
+                        const isSelected = selectedDeviceUuid === device.uuid;
+                        html += `
+                            <button
+                                class="device-btn btn ${isSelected ? 'btn-primary' : 'btn-outline'} w-full justify-start"
+                                data-device-uuid="${device.uuid}"
+                                data-device-name="${device.name}"
+                                onclick="toggleDevice('${device.uuid}', '${device.name}')"
+                            >
+                                📺 ${device.name}
+                            </button>
+                        `;
+                    });
+                    html += '</div>';
+                    event.detail.target.innerHTML = html;
+                } else if (response.devices && response.devices.length === 0) {
+                    event.detail.target.innerHTML = '<p class="text-sm text-warning mt-2">No Chromecast devices found</p>';
+                    updatePlaybackButtons(false);
+                } else if (!response.success) {
+                    event.detail.target.innerHTML = '<p class="text-sm text-error mt-2">' + (response.error || 'Scan failed') + '</p>';
+                    updatePlaybackButtons(false);
+                }
+            } catch (e) {
+                console.error('Error handling device scan:', e);
+            }
+        }
+    });
+
+    // Toggle device selection
+    function toggleDevice(uuid, name) {
+        if (selectedDeviceUuid === uuid) {
+            // Unselect
+            selectedDeviceUuid = null;
+            updateDeviceButtons();
+            updatePlaybackButtons(false);
+            document.getElementById('device-status').textContent = 'No device selected';
+            document.getElementById('device-status').className = 'text-sm text-warning mt-2';
+
+            // Notify server (optional - device selection is local until playback starts)
+        } else {
+            // Select new device
+            selectedDeviceUuid = uuid;
+
+            // Send selection to server
+            fetch('/admin/devices/select', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'device_uuid=' + encodeURIComponent(uuid)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    updateDeviceButtons();
+                    updatePlaybackButtons(true);
+                    document.getElementById('device-status').textContent = 'Selected: ' + name;
+                    document.getElementById('device-status').className = 'text-sm text-success mt-2';
+                } else {
+                    selectedDeviceUuid = null;
+                    updateDeviceButtons();
+                    updatePlaybackButtons(false);
+                    alert('Failed to select device');
+                }
+            })
+            .catch(err => {
+                console.error('Error selecting device:', err);
+                selectedDeviceUuid = null;
+                updateDeviceButtons();
+                updatePlaybackButtons(false);
+            });
+        }
+    }
+
+    // Update device button styles
+    function updateDeviceButtons() {
+        document.querySelectorAll('.device-btn').forEach(btn => {
+            const uuid = btn.getAttribute('data-device-uuid');
+            if (uuid === selectedDeviceUuid) {
+                btn.className = 'device-btn btn btn-primary w-full justify-start';
+            } else {
+                btn.className = 'device-btn btn btn-outline w-full justify-start';
+            }
+        });
+    }
+
+    // Update playback button states
+    function updatePlaybackButtons(enabled) {
+        const startBtn = document.getElementById('start-playback-btn');
+        const skipBtn = document.getElementById('skip-song-btn');
+        const stopBtn = document.getElementById('stop-playback-btn');
+
+        if (enabled) {
+            startBtn.removeAttribute('disabled');
+            skipBtn.removeAttribute('disabled');
+            stopBtn.removeAttribute('disabled');
+        } else {
+            startBtn.setAttribute('disabled', 'disabled');
+            skipBtn.setAttribute('disabled', 'disabled');
+            stopBtn.setAttribute('disabled', 'disabled');
+        }
+    }
+
+    // Update scan button state based on playback
+    function updateScanButton() {
+        const scanBtn = document.getElementById('scan-btn');
+        const tooltip = document.getElementById('scan-btn-tooltip');
+
+        if (isPlaying) {
+            // Disable scan button during playback
+            scanBtn.setAttribute('disabled', 'disabled');
+            scanBtn.classList.add('btn-disabled');
+            tooltip.setAttribute('data-tip', 'Stop playback to scan for new devices');
+            tooltip.classList.add('tooltip', 'tooltip-open', 'tooltip-error');
+        } else {
+            // Enable scan button when not playing
+            scanBtn.removeAttribute('disabled');
+            scanBtn.classList.remove('btn-disabled');
+            tooltip.setAttribute('data-tip', '');
+            tooltip.classList.remove('tooltip', 'tooltip-open', 'tooltip-error');
+        }
+    }
+
+    // Initialize scan button state on page load
+    updateScanButton();
+</script>
+{% endblock %}

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Karaoke Jukebox{% endblock %}
+
+{% block content %}
+<div class="hero min-h-[calc(100vh-12rem)]">
+    <div class="hero-content flex-col">
+        <div class="text-center mb-8">
+            <h1 class="text-5xl font-bold">🎤 Karaoke Jukebox</h1>
+            <p class="py-6 text-lg">Enter your name to start queueing songs!</p>
+        </div>
+
+        <div class="card w-full max-w-sm shadow-2xl bg-base-100">
+            <form method="post" action="/login" class="card-body">
+                <!-- Username Input -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Your Name</span>
+                    </label>
+                    <input
+                        type="text"
+                        name="username"
+                        id="username"
+                        placeholder="Enter your name"
+                        class="input input-bordered"
+                        required
+                        autofocus
+                        hx-on="keyup: if(this.value.toLowerCase() === 'admin') { document.getElementById('password-field').classList.remove('hidden'); document.getElementById('password').setAttribute('required', 'required'); } else { document.getElementById('password-field').classList.add('hidden'); document.getElementById('password').removeAttribute('required'); }"
+                    />
+                </div>
+
+                <!-- Password Input (hidden by default, shown for admin) -->
+                <div class="form-control hidden" id="password-field">
+                    <label class="label">
+                        <span class="label-text">Admin Password</span>
+                    </label>
+                    <input
+                        type="password"
+                        name="password"
+                        id="password"
+                        placeholder="Enter admin password"
+                        class="input input-bordered"
+                    />
+                </div>
+
+                <!-- Error Message -->
+                {% if error_message %}
+                <div class="alert alert-error">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>{{ error_message }}</span>
+                </div>
+                {% endif %}
+
+                <!-- Submit Button -->
+                <div class="form-control mt-6">
+                    <button type="submit" class="btn btn-primary">
+                        Login
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

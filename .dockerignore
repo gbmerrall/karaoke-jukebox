@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Test files
+test_*.py
+*_test.py
+
+# Ruff cache
+.ruff_cache/
+
+# Data directory contents (will be created fresh or mounted as volume)
+data/videos/*
+data/*.db
+data/*.db-*
+
+# Environment files (will be provided at runtime)
+.env
+
+# Development scripts
+setup.sh
+run.sh
+
+# Documentation that doesn't need to be in the image
+README.md
+TODO.md
+TASKS.md
+DESIGN.md
+ARCHITECTURE.md
+IMPLEMENTATION_PLAN.md
+
+# Old implementation
+old/

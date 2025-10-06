@@ -1,0 +1,79 @@
+<!-- Search Results Partial -->
+
+{% if error %}
+    <!-- Error Message -->
+    <div class="alert alert-error">
+        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>{{ error }}</span>
+    </div>
+{% elif results %}
+    <!-- Results Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for video in results %}
+        <div class="card bg-base-200 shadow-md hover:shadow-xl transition-shadow">
+            <!-- Thumbnail -->
+            <figure class="relative">
+                <img
+                    src="{{ video.thumbnail_url }}"
+                    alt="{{ video.title }}"
+                    class="w-full h-48 object-cover"
+                />
+                <!-- Duration Badge -->
+                <div class="badge badge-neutral absolute bottom-2 right-2">
+                    {{ (video.duration // 60) }}:{{ '%02d' % (video.duration % 60) }}
+                </div>
+            </figure>
+
+            <div class="card-body p-4">
+                <!-- Title -->
+                <h3 class="card-title text-sm line-clamp-2" title="{{ video.title }}">
+                    {{ video.title }}
+                </h3>
+
+                <!-- View Count -->
+                <p class="text-xs text-gray-500">
+                    👁️ {{ '{:,}'.format(video.views) }} views
+                </p>
+
+                <!-- Actions -->
+                <div class="card-actions justify-between items-center mt-2">
+                    <!-- Preview Link -->
+                    <a
+                        href="https://www.youtube.com/watch?v={{ video.video_id }}"
+                        target="_blank"
+                        class="btn btn-sm btn-ghost"
+                    >
+                        👁️ Preview
+                    </a>
+
+                    <!-- Queue Button -->
+                    <form
+                        hx-post="/queue/{{ video.video_id }}"
+                        hx-target="#modal-container"
+                        hx-swap="innerHTML"
+                    >
+                        <input type="hidden" name="title" value="{{ video.title }}">
+                        <input type="hidden" name="thumbnail_url" value="{{ video.thumbnail_url }}">
+                        <input type="hidden" name="duration" value="{{ video.duration }}">
+                        <input type="hidden" name="views" value="{{ video.views }}">
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            + Queue
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <!-- No Results -->
+    <div class="text-center py-8 text-gray-500">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <p class="text-lg">No results found</p>
+        <p class="text-sm">Try a different search term</p>
+    </div>
+{% endif %}

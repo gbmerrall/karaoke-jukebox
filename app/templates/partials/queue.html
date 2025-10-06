@@ -1,0 +1,51 @@
+<!-- Queue Component Partial -->
+
+{% if queue and queue|length > 0 %}
+    <!-- Queue List (max 3 visible, rest scrollable) -->
+    <div class="space-y-2 max-h-[240px] overflow-y-auto pr-2">
+        {% for item in queue %}
+        <div class="flex items-center gap-3 bg-base-200 rounded-lg p-3 {% if item.status == 'playing' %}border-2 border-success{% endif %}">
+            <!-- Queue Number -->
+            <div class="badge badge-neutral badge-lg font-bold">
+                #{{ loop.index }}
+            </div>
+
+            <!-- Song Info -->
+            <div class="flex-1 min-w-0">
+                <h3 class="font-semibold truncate" title="{{ item.title }}">
+                    {{ item.title }}
+                </h3>
+                <div class="text-sm text-gray-500 flex items-center gap-2">
+                    {% if item.status == 'playing' %}
+                    <span class="badge badge-success badge-sm gap-1">
+                        <span class="animate-pulse">&#9654;</span> Playing
+                    </span>
+                    {% endif %}
+                    <span>{{ item.username }}</span>
+                </div>
+            </div>
+
+            <!-- Delete Button -->
+            {% if username and (item.username == username or is_admin) %}
+            <button
+                class="btn btn-error btn-sm"
+                hx-delete="/queue/{{ item.id }}"
+                hx-confirm="Remove '{{ item.title }}' from queue?"
+                hx-swap="none"
+            >
+                Remove
+            </button>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <!-- Empty State -->
+    <div class="flex flex-col items-center justify-center py-12 text-gray-500">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+        </svg>
+        <p class="text-lg font-medium">Queue is empty</p>
+        <p class="text-sm">Search for songs to get started!</p>
+    </div>
+{% endif %}

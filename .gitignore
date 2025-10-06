@@ -50,6 +50,10 @@ cursor-memory-bank/
 project-memory-bank/
 .ruff_cache/
 .flake8
+node_modules/
+.mcp.json
+package-lock.json
+package.json
 
 # Data directory
 data/*
@@ -58,3 +62,4 @@ data/*
 # Logs
 *.log
 logs/ 
+

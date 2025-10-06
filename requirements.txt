@@ -1,8 +1,0 @@
-alembic
-apscheduler
-fastapi
-pychromecast
-pynng
-pytubefix
-sqlalchemy
-pydantic-settings

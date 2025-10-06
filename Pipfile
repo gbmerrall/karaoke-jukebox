@@ -4,23 +4,20 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-fastapi = "*"
-structlog = "*"
-python-multipart = "*"
-jinja2 = "*"
-uvicorn = "*"
-gunicorn = "*"
 pychromecast = "*"
-pynng = "*"
 apscheduler = "*"
-sqlalchemy = "*"
-pytubefix = "*"
-alembic = "*"
-itsdangerous = "*"
-yt-dlp = "*"
 google-api-python-client = "*"
 httpx = "*"
 pydantic-settings = "*"
+fastapi = "*"
+yt-dlp = {extras = ["default"], version = "*"}
+aiosqlite = "*"
+uvicorn = {extras = ["standard"], version = "*"}
+gunicorn = "*"
+jinja2 = "*"
+python-multipart = "*"
+itsdangerous = "*"
+isodate = "*"
 
 [dev-packages]
 ruff = "*"

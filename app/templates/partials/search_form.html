@@ -1,0 +1,24 @@
+<!-- Search Form Partial -->
+<form
+    hx-post="/search"
+    hx-target="#search-results"
+    hx-swap="innerHTML"
+>
+    <div class="form-control">
+        <div class="flex gap-2 w-full">
+            <input
+                type="text"
+                name="query"
+                placeholder="Search for a song or artist..."
+                class="input input-bordered flex-1"
+                required
+            />
+            <button type="submit" class="btn btn-primary">
+                Search
+            </button>
+        </div>
+        <label class="label">
+            <span class="label-text-alt">💡 Tip: We'll automatically search for karaoke versions!</span>
+        </label>
+    </div>
+</form>
