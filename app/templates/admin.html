@@ -14,7 +14,7 @@
     <div class="flex items-center justify-between mb-2">
         <h2 class="text-2xl font-bold">Queue</h2>
         <div class="flex gap-2">
-            <span class="badge badge-primary badge-lg" id="queue-count">{{ queue|length }} songs</span>
+            <span class="badge badge-primary badge-lg" id="queue-count">{{ queue|length }} {{ 'song' if queue|length == 1 else 'songs' }}</span>
             <button
                 class="btn btn-error btn-sm"
                 hx-post="/admin/queue/clear"
@@ -114,16 +114,28 @@
 
 {% block extra_scripts %}
 <script>
-    // Update queue count when queue updates
-    document.body.addEventListener('htmx:afterSwap', function(event) {
-        if (event.detail.target.id === 'queue-content') {
-            // Count the number of queue items
-            const count = event.detail.target.querySelectorAll('.queue-item').length;
+    // Update queue count when queue updates (handles both SSE and manual swaps)
+    function updateQueueCount() {
+        const queueContent = document.getElementById('queue-content');
+        if (queueContent) {
+            const count = queueContent.querySelectorAll('.queue-item').length;
             const badge = document.getElementById('queue-count');
             if (badge) {
                 badge.textContent = count + (count === 1 ? ' song' : ' songs');
             }
         }
+    }
+
+    // Listen for HTMX afterSwap event (for manual queue updates)
+    document.body.addEventListener('htmx:afterSwap', function(event) {
+        if (event.detail.target.id === 'queue-content') {
+            updateQueueCount();
+        }
+    });
+
+    // Listen for SSE messages (for real-time queue updates)
+    document.body.addEventListener('htmx:sseMessage', function(event) {
+        updateQueueCount();
     });
 
     // Handle admin action responses (playback controls, device scan, clear queue)

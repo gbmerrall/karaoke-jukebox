@@ -30,7 +30,8 @@ async def admin_page(request: Request):
     """
     username, is_admin = require_admin(request)
 
-    # Get current queue
+    # Get initial queue state for page load
+    # (SSE will then keep it updated in real-time)
     queue = await queue_manager.get_queue()
 
     logger.info(f"Admin page accessed by {username}")
