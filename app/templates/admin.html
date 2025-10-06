@@ -175,6 +175,31 @@
     let selectedDeviceUuid = null;
     let isPlaying = false;
 
+    // Poll playback status to keep UI in sync with backend
+    function pollPlaybackStatus() {
+        fetch('/admin/status')
+            .then(response => response.json())
+            .then(data => {
+                const wasPlaying = isPlaying;
+                isPlaying = data.is_playing;
+
+                // If playback state changed, update UI
+                if (wasPlaying !== isPlaying) {
+                    console.log('Playback state changed:', isPlaying ? 'playing' : 'stopped');
+                    updateScanButton();
+                }
+            })
+            .catch(err => {
+                console.error('Error polling status:', err);
+            });
+    }
+
+    // Start polling every 2 seconds
+    setInterval(pollPlaybackStatus, 2000);
+
+    // Do initial poll
+    pollPlaybackStatus();
+
     // Handle device scan responses
     document.body.addEventListener('htmx:afterSwap', function(event) {
         if (event.detail.target.id === 'device-list') {

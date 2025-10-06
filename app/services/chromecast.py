@@ -272,8 +272,11 @@ class ChromecastService:
                 # Get next item from queue
                 queue = self._get_queue_sync()
                 if not queue:
-                    logger.info("Queue is empty, stopping playback")
-                    break
+                    logger.info("Queue is empty, waiting for songs to be added...")
+                    # Don't stop playback - wait for queue to be refilled
+                    # This allows automatic resumption when users add songs during a break
+                    time.sleep(5)  # Check every 5 seconds
+                    continue
 
                 item = queue[0]
                 video_id = item["video_id"]
