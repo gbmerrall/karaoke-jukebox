@@ -4,9 +4,11 @@ Loads configuration from environment variables or .env file.
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator, ValidationError
 from pathlib import Path
 import socket
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,37 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore"
     )
+
+    @field_validator('admin_password')
+    @classmethod
+    def validate_admin_password(cls, v: str) -> str:
+        """Validate admin password is not empty and has minimum length."""
+        if not v or len(v.strip()) == 0:
+            raise ValueError("ADMIN_PASSWORD cannot be empty")
+        if len(v) < 4:
+            raise ValueError("ADMIN_PASSWORD must be at least 4 characters")
+        return v
+
+    @field_validator('youtube_api_key')
+    @classmethod
+    def validate_youtube_api_key(cls, v: str) -> str:
+        """Validate YouTube API key is not empty."""
+        if not v or len(v.strip()) == 0:
+            raise ValueError("YOUTUBE_API_KEY cannot be empty")
+        return v
+
+    @field_validator('secret_key')
+    @classmethod
+    def validate_secret_key(cls, v: str) -> str:
+        """Validate secret key is not empty and has minimum length."""
+        if not v or len(v.strip()) == 0:
+            raise ValueError("SECRET_KEY cannot be empty")
+        if len(v) < 32:
+            raise ValueError(
+                "SECRET_KEY must be at least 32 characters for security. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        return v
 
     def get_db_path(self) -> Path:
         """Get the full path to the SQLite database file."""
@@ -133,5 +166,49 @@ class Settings(BaseSettings):
         return url
 
 
+def load_settings() -> Settings:
+    """
+    Load and validate settings with helpful error messages.
+
+    Returns:
+        Settings instance
+
+    Exits:
+        System exit with code 1 if validation fails
+    """
+    try:
+        return Settings()
+    except ValidationError as e:
+        logger.error("=" * 60)
+        logger.error("CONFIGURATION ERROR - Missing or invalid environment variables")
+        logger.error("=" * 60)
+
+        for error in e.errors():
+            field = error['loc'][0] if error['loc'] else 'unknown'
+            msg = error['msg']
+
+            # Convert field name to env var format
+            env_var = field.upper()
+
+            logger.error(f"❌ {env_var}: {msg}")
+
+        logger.error("")
+        logger.error("Required environment variables:")
+        logger.error("  - ADMIN_PASSWORD: Admin login password (min 4 characters)")
+        logger.error("  - YOUTUBE_API_KEY: YouTube Data API v3 key")
+        logger.error("  - SECRET_KEY: Session signing key (min 32 characters)")
+        logger.error("")
+        logger.error("Optional environment variables:")
+        logger.error("  - SERVER_HOST: Server IP for Chromecast (auto-detected in dev)")
+        logger.error("  - SERVER_PORT: Server port (default: 8000)")
+        logger.error("  - DATA_DIR: Data directory path (default: ./data)")
+        logger.error("")
+        logger.error("Create a .env file or set these environment variables.")
+        logger.error("See DEVELOPMENT.md for setup instructions.")
+        logger.error("=" * 60)
+
+        sys.exit(1)
+
+
 # Global settings instance
-settings = Settings()
+settings = load_settings()
