@@ -22,9 +22,9 @@ from app.database import init_db
 from app.services.queue_manager import queue_manager
 from app.routes import auth, search, queue, admin
 
-# Configure logging
+# Configure logging (will be reconfigured with LOG_LEVEL setting during startup)
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,  # Default level before settings are fully loaded
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout)
@@ -59,6 +59,11 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     logger.info("Starting Karaoke Jukebox application...")
+
+    # Configure logging level from settings
+    log_level = getattr(logging, settings.log_level)
+    logging.getLogger().setLevel(log_level)
+    logger.info(f"Log level set to: {settings.log_level}")
 
     # Initialize database
     logger.info("Initializing database...")

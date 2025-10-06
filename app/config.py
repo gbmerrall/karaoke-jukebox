@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # Application Configuration
     secret_key: str
     data_dir: Path = Path("./data")
+    log_level: str = "INFO"  # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
     # Server Configuration
     server_host: str = ""  # Auto-detect if not set
@@ -72,6 +73,18 @@ class Settings(BaseSettings):
                 "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
             )
         return v
+
+    @field_validator('log_level')
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        """Validate log level is valid."""
+        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        v_upper = v.upper()
+        if v_upper not in valid_levels:
+            raise ValueError(
+                f"LOG_LEVEL must be one of: {', '.join(valid_levels)}. Got: {v}"
+            )
+        return v_upper
 
     def get_db_path(self) -> Path:
         """Get the full path to the SQLite database file."""
@@ -199,6 +212,7 @@ def load_settings() -> Settings:
         logger.error("  - SECRET_KEY: Session signing key (min 32 characters)")
         logger.error("")
         logger.error("Optional environment variables:")
+        logger.error("  - LOG_LEVEL: Logging level - DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)")
         logger.error("  - SERVER_HOST: Server IP for Chromecast (auto-detected in dev)")
         logger.error("  - SERVER_PORT: Server port (default: 8000)")
         logger.error("  - DATA_DIR: Data directory path (default: ./data)")
