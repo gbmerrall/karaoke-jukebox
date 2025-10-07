@@ -35,12 +35,8 @@ Option 1: Shell script
 ./run.sh
 ```
 
-Option 2: Python script
-```bash
-python run.py
-```
 
-Option 3: From parent directory with pipenv
+Option 2: From parent directory with pipenv
 ```bash
 cd /Users/graeme/Code/jukebox
 pipenv run python new/run.py
@@ -81,10 +77,8 @@ Open your browser to: **http://localhost:8000**
 
 ### Build the Image
 
-From the parent directory (`/Users/graeme/Code/jukebox/`):
-
 ```bash
-docker build -f new/Dockerfile -t karaoke-jukebox .
+docker build -t karaoke-jukebox .
 ```
 
 ### Run the Container
@@ -93,12 +87,10 @@ docker build -f new/Dockerfile -t karaoke-jukebox .
 docker run -d \
   --name karaoke-jukebox \
   -p 8000:8000 \
-  -v $(pwd)/new/data:/app/data \
   -e ADMIN_PASSWORD=your_secure_password \
   -e YOUTUBE_API_KEY=your_youtube_api_key \
   -e SECRET_KEY=your_secret_key \
   -e SERVER_HOST=192.168.1.100 \
-  -e SERVER_PORT=8000 \
   karaoke-jukebox
 ```
 
@@ -109,41 +101,32 @@ docker run -d \
    - DO NOT use `localhost` or `127.0.0.1` (Chromecast cannot reach the container)
    - Example: `SERVER_HOST=192.168.1.100`
 
-2. **Port Mapping**: If you map to a different external port (e.g., `-p 80:8000`):
+2. **SECRET_KEY** must be at least 32 characters
+   - Generate with: `python -c "import secrets; print(secrets.token_hex(32))"`
+
+3. **Port Mapping**: If you map to a different external port (e.g., `-p 80:8000`):
    - Set `SERVER_PORT` to the EXTERNAL port that Chromecast will use
    - Example: `docker run -p 80:8000 ... -e SERVER_PORT=80 ...`
 
-3. **Data Volume**: Mount `/app/data` to persist videos and database:
-   - `-v /path/to/data:/app/data`
+4. **Data Persistence**: Database and videos are ephemeral (lost on container restart)
+   - To persist data, add: `-v /path/to/data:/app/data`
 
-4. **Environment Variables**: All required `.env` values should be passed via `-e` flags
+### Docker Compose
 
-### Docker Compose (Optional)
+A `docker-compose.yml` file is included. Before running:
 
-Create `docker-compose.yml`:
+1. Edit `docker-compose.yml` and set the required environment variables:
+   - `ADMIN_PASSWORD`
+   - `YOUTUBE_API_KEY`
+   - `SECRET_KEY` (generate with: `python -c "import secrets; print(secrets.token_hex(32))"`)
+   - `SERVER_HOST` (your Docker host's IP address)
 
-```yaml
-version: '3.8'
-services:
-  jukebox:
-    build:
-      context: .
-      dockerfile: new/Dockerfile
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./new/data:/app/data
-    environment:
-      - ADMIN_PASSWORD=your_secure_password
-      - YOUTUBE_API_KEY=your_youtube_api_key
-      - SECRET_KEY=your_secret_key
-      - SERVER_HOST=192.168.1.100  # Your host IP
-      - SERVER_PORT=8000
-      - DATA_DIR=/app/data
-    restart: unless-stopped
-```
+2. Run with:
+   ```bash
+   docker-compose up -d
+   ```
 
-Run with: `docker-compose up -d`
+**Note:** Database and videos are ephemeral by default. To persist data, uncomment the volumes section in `docker-compose.yml`
 
 ## Development
 

@@ -9,6 +9,15 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# Required runtime environment variables (pass via -e or docker-compose):
+# - ADMIN_PASSWORD: Admin user password (required)
+# - YOUTUBE_API_KEY: YouTube Data API v3 key (required)
+# - SECRET_KEY: Session signing key - generate with: python -c "import secrets; print(secrets.token_hex(32))"
+# - SERVER_HOST: Docker host IP address (REQUIRED for Chromecast, e.g., 192.168.1.100)
+# - SERVER_PORT: External port for Chromecast access (default: 8000)
+# - DATA_DIR: Data directory path (default: /app/data)
+# - LOG_LEVEL: Logging level (default: INFO)
+
 # Install system dependencies
 # - ffmpeg: Required for yt-dlp video downloads and processing
 # - curl: Useful for health checks
@@ -20,28 +29,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create app directory
 WORKDIR /app
 
-# Install pipenv
-RUN pip install pipenv
-
-# Copy Pipfile and Pipfile.lock
-# Note: Build context should be the parent directory
-# Build with: docker build -f new/Dockerfile -t karaoke-jukebox .
-COPY Pipfile Pipfile.lock ./
+# Copy requirements first (for better layer caching)
+COPY requirements.txt .
 
 # Install Python dependencies
-# Use --system to install to system python (not virtualenv) since we're in a container
-# Use --deploy to ensure Pipfile.lock is up to date
-RUN pipenv install --system --deploy --ignore-pipfile
+RUN pip install -r requirements.txt
 
 # Copy application code
-COPY new/ .
+COPY app/ .
 
 # Create data directory structure
 RUN mkdir -p /app/data/videos && \
     chmod -R 755 /app/data
 
-# Create marker file to indicate Docker environment
-RUN touch /.dockerenv
 
 # Expose port
 EXPOSE 8000

@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  jukebox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: karaoke-jukebox
+    ports:
+      - "8000:8000"
+
+    # NOTE: No volumes configured - database and videos are ephemeral
+    # All data (queue, downloaded videos) will be lost on container restart
+    # Uncomment below to persist data:
+    # volumes:
+    #   - ./data:/app/data
+
+    environment:
+      # REQUIRED: Set these values before running
+      # SECRET_KEY minimum 32 characters long
+      # You can generate SECRET_KEY with:
+      #   python -c "import secrets; print(secrets.token_hex(32))"
+      - ADMIN_PASSWORD=your_secure_password_here
+      - YOUTUBE_API_KEY=your_youtube_api_key_here
+      - SECRET_KEY=your_secret_key_here
+
+      # REQUIRED for Chromecast: Set to your Docker host's IP address
+      # Find with: ip addr show (Linux) or ifconfig (macOS)
+      # DO NOT use localhost or 127.0.0.1
+      - SERVER_HOST=192.168.1.100
+
+      # Optional: Adjust if needed
+      - SERVER_PORT=8000
+      - DATA_DIR=/app/data
+      - LOG_LEVEL=INFO
+
+    restart: unless-stopped
+
+    # Network mode host can be used for better Chromecast discovery
+    # Uncomment below and comment out 'ports' section if needed
+    # network_mode: host
