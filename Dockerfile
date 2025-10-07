@@ -35,8 +35,8 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install -r requirements.txt
 
-# Copy application code
-COPY app/ .
+# Copy application code (preserve package structure)
+COPY app/ ./app/
 
 # Create data directory structure
 RUN mkdir -p /app/data/videos && \
