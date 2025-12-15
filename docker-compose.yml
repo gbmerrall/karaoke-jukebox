@@ -6,8 +6,8 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: karaoke-jukebox
-    ports:
-      - "8000:8000"
+    # ports:
+    #   - "5051:5051"
 
     # NOTE: No volumes configured - database and videos are ephemeral
     # All data (queue, downloaded videos) will be lost on container restart
@@ -30,7 +30,7 @@ services:
       - SERVER_HOST=192.168.1.100
 
       # Optional: Adjust if needed
-      - SERVER_PORT=8000
+      - SERVER_PORT=5051
       - DATA_DIR=/app/data
       - LOG_LEVEL=INFO
 
@@ -38,4 +38,4 @@ services:
 
     # Network mode host can be used for better Chromecast discovery
     # Uncomment below and comment out 'ports' section if needed
-    # network_mode: host
+    network_mode: host
