@@ -111,6 +111,8 @@ docker run -d \
 4. **Data Persistence**: Database and videos are ephemeral (lost on container restart)
    - To persist data, add: `-v /path/to/data:/app/data`
 
+5. Using DOCKER_BUILDKIT for caching of apt data to speed up rebuilds. Ensire you set DOCKER_BUILDKIT=1 before building
+
 ### Docker Compose
 
 A `docker-compose.yml` file is included. Before running:
@@ -140,16 +142,6 @@ The app uses:
 
 ## Troubleshooting
 
-### "Module not found" errors
-Make sure you're running from the pipenv environment:
-```bash
-cd /Users/graeme/Code/jukebox
-pipenv install
-pipenv shell
-cd new
-python run.py
-```
-
 ### Can't find Chromecast
 - Ensure your Chromecast and server are on the same network
 - Check firewall settings
@@ -158,7 +150,10 @@ python run.py
 ### Videos won't download
 - **Check if ffmpeg is installed**: Run `ffmpeg -version` in terminal
   - If not installed, see Requirements section above
+- **yt-dlp now requires a Javascript engine ideally deno**
+  - This is already taken care of in Dockerfile
 - Verify your `YOUTUBE_API_KEY` is valid
 - Check `data/videos/` directory permissions
 - Look at server logs for specific errors
 - Common error: "ffmpeg is not installed" - Install ffmpeg to fix
+
