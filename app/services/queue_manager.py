@@ -301,7 +301,7 @@ class QueueManager:
             while True:
                 try:
                     # Wait for update or timeout for heartbeat
-                    event = await asyncio.wait_for(conn_queue.get(), timeout=30.0)
+                    event = await asyncio.wait_for(conn_queue.get(), timeout=15.0)
                     yield event
                 except asyncio.TimeoutError:
                     # Send heartbeat to keep connection alive

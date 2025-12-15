@@ -182,6 +182,22 @@
             .then(data => {
                 const wasPlaying = isPlaying;
                 isPlaying = data.is_playing;
+                
+                // Sync selected device from server
+                if (data.selected_device_uuid && data.selected_device_uuid !== selectedDeviceUuid) {
+                    console.log('Syncing selected device from server:', data.selected_device_uuid);
+                    selectedDeviceUuid = data.selected_device_uuid;
+                    updateDeviceButtons();
+                    updatePlaybackButtons(true);
+                    
+                    // Update status text if we can find the name
+                    const btn = document.querySelector(`.device-btn[data-device-uuid="${selectedDeviceUuid}"]`);
+                    if (btn) {
+                        const name = btn.getAttribute('data-device-name');
+                        document.getElementById('device-status').textContent = 'Selected: ' + name;
+                        document.getElementById('device-status').className = 'text-sm text-success mt-2';
+                    }
+                }
 
                 // If playback state changed, update UI
                 if (wasPlaying !== isPlaying) {
