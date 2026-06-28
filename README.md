@@ -30,16 +30,20 @@ YOUTUBE_API_KEY=your_youtube_api_key
 
 ### 3. Run Development Server
 
-Option 1: Shell script
+Option 1: Shell script (from the repository root)
 ```bash
 ./run.sh
 ```
 
-
-Option 2: From parent directory with pipenv
+Option 2: Make target
 ```bash
-cd /Users/graeme/Code/jukebox
-pipenv run python new/run.py
+make run
+```
+
+Option 3: Directly with pipenv (from the repository root)
+```bash
+pipenv install --dev
+pipenv run python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### 4. Access the App
@@ -69,7 +73,8 @@ Open your browser to: **http://localhost:8000**
   - macOS: `brew install ffmpeg`
   - Ubuntu/Debian: `sudo apt-get install ffmpeg`
   - Windows: Download from https://ffmpeg.org/download.html
-- All dependencies in `Pipfile` (install with `pipenv install` from parent directory)
+- **deno** - Required at runtime for yt-dlp's JS-challenge solver (downloads fail without it)
+- All dependencies in `Pipfile` (install with `pipenv install --dev` from the repository root)
 - **YouTube Data API v3 key**
 - **Chromecast device** on the same network (for playback)
 
@@ -129,6 +134,35 @@ A `docker-compose.yml` file is included. Before running:
    ```
 
 **Note:** Database and videos are ephemeral by default. To persist data, uncomment the volumes section in `docker-compose.yml`
+
+## Keeping downloads working (yt-dlp)
+
+`yt-dlp` is the most fragile part of this app. YouTube periodically changes how
+it serves video, which breaks downloads until `yt-dlp` is updated. Downloads
+also require **ffmpeg** and **deno** (yt-dlp runs a deno-based JS-challenge
+solver) to be installed at runtime.
+
+How this project stays ahead of breakage:
+
+- **Canary test**: an opt-in integration test downloads a known-good clip and
+  validates it. It hits the live network, so it is skipped by default.
+  ```bash
+  make canary            # pipenv run pytest -m integration --run-integration
+  ```
+- **Deploy gate**: `make preflight` bumps yt-dlp and then runs the canary.
+  `make build` depends on `preflight`, so the Docker image will only build if a
+  freshly-updated yt-dlp can still download:
+  ```bash
+  make preflight         # pipenv update yt-dlp + canary
+  make build             # preflight, then docker build
+  ```
+- **Daily CI canary**: `.github/workflows/yt-dlp-canary.yml` runs the same
+  canary on a daily schedule. A red run means YouTube changed and yt-dlp needs a
+  bump. The Docker image also force-upgrades yt-dlp on every rebuild, so a plain
+  rebuild usually picks up the fix.
+
+To recover from broken downloads: run `make preflight` locally, commit the
+updated lockfile/`requirements.txt`, and rebuild the image.
 
 ## Development
 

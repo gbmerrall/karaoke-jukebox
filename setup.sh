@@ -1,12 +1,13 @@
 #!/bin/bash
 # Quick setup script for development
+# Run from the repository root.
 
-echo "🎤 Karaoke Jukebox - Quick Setup"
+echo "Karaoke Jukebox - Quick Setup"
 echo ""
 
 # Copy .env.example if .env doesn't exist
 if [ ! -f .env ]; then
-    echo "📝 Creating .env from .env.example..."
+    echo "Creating .env from .env.example..."
     cp .env.example .env
 
     # Generate a secret key
@@ -21,9 +22,9 @@ if [ ! -f .env ]; then
         sed -i "s/your_secret_key_here/$SECRET_KEY/" .env
     fi
 
-    echo "✅ Created .env file with generated SECRET_KEY"
+    echo "Created .env file with generated SECRET_KEY"
     echo ""
-    echo "⚠️  IMPORTANT: You still need to set these values in .env:"
+    echo "IMPORTANT: You still need to set these values in .env:"
     echo "   - ADMIN_PASSWORD (choose a secure password)"
     echo "   - YOUTUBE_API_KEY (get from https://console.cloud.google.com/apis/credentials)"
     echo ""
@@ -33,10 +34,11 @@ if [ ! -f .env ]; then
         ${EDITOR:-nano} .env
     fi
 else
-    echo "✅ .env file already exists"
+    echo ".env file already exists"
 fi
 
 echo ""
-echo "🚀 Setup complete! Run the server with:"
-echo "   ./run.sh     (or)    python run.py"
+echo "Setup complete. Install dependencies and run the server with:"
+echo "   pipenv install --dev"
+echo "   ./run.sh          (or)    make run"
 echo ""

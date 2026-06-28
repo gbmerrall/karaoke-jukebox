@@ -61,7 +61,7 @@ pipenv install --dev
 
 ### 2. Environment Configuration
 
-Create `new/.env` with the following variables:
+Create `.env` with the following variables (or run `./setup.sh`, which creates it from `.env.example` and generates a `SECRET_KEY`):
 
 ```bash
 # Required
@@ -81,14 +81,17 @@ python -c "import secrets; print(secrets.token_hex(32))"
 
 ### 3. Run the Development Server
 
-```bash
-# From repository root (recommended)
-pipenv run python new/run.py
+From the repository root, use any of:
 
-# Or from new/ directory
-cd new
-pipenv shell
-python run.py
+```bash
+# Make target
+make run
+
+# Shell script
+./run.sh
+
+# Directly with pipenv
+pipenv run python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 The application will be available at `http://localhost:8000`
@@ -107,10 +110,12 @@ The application will be available at `http://localhost:8000`
 
 ### Project Structure
 
+The application code lives at the repository root under `app/`.
+
 ```
-new/
+.
 ├── app/
-│   ├── main.py              # FastAPI app initialization
+│   ├── main.py              # FastAPI app (ASGI entry point: app.main:app)
 │   ├── config.py            # Configuration and settings
 │   ├── database.py          # SQLite async operations
 │   ├── routes/              # API endpoints
@@ -123,12 +128,21 @@ new/
 │   │   ├── download.py      # Video downloads
 │   │   ├── chromecast.py    # Chromecast control
 │   │   └── queue_manager.py # Queue state + SSE broadcasting
-│   └── templates/           # Jinja2 + HTMX templates
+│   ├── templates/           # Jinja2 + HTMX templates
+│   └── static/              # CSS and JS assets
+├── tests/                   # pytest test suite (pytest is the test runner)
 ├── data/
 │   ├── videos/              # Downloaded video files
 │   └── karaoke.db           # SQLite database
-├── run.py                   # Dev server entry point
-└── Dockerfile               # Production container
+├── .github/workflows/       # CI (ci.yml, yt-dlp-canary.yml)
+├── Makefile                 # Developer task runner (run, test, canary, build)
+├── run.sh                   # Dev server launcher
+├── setup.sh                 # First-time environment setup
+├── Dockerfile               # Production container
+├── docker-compose.yml       # Compose deployment
+├── Pipfile                  # Pipenv dependencies
+├── requirements.txt         # Pinned dependencies (used by Docker)
+└── pyproject.toml           # Tooling config (ruff, pytest)
 ```
 
 ### Key Architectural Patterns
@@ -192,7 +206,9 @@ CREATE TABLE queue (
 
 ```bash
 # Development mode with auto-reload
-pipenv run python new/run.py
+make run
+# or: ./run.sh
+# or: pipenv run python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # Access the application
 # User view: http://localhost:8000
@@ -203,13 +219,13 @@ pipenv run python new/run.py
 
 ```bash
 # Lint code
-pipenv run ruff check new/
+pipenv run ruff check .
 
 # Format code
-pipenv run ruff format new/
+pipenv run ruff format .
 
-# Run both before committing
-pipenv run ruff format new/ && pipenv run ruff check new/
+# Run both before committing (or use: make lint)
+pipenv run ruff format . && pipenv run ruff check .
 ```
 
 ### Adding a New Feature
@@ -253,35 +269,33 @@ pipenv run ruff format new/ && pipenv run ruff check new/
    )
    ```
 
-### Testing Chromecast Integration
+### Running Tests
 
-Test scripts are available in `new/`:
+The test suite lives in `tests/` and uses **pytest**.
 
-1. **Update test configuration**:
-   ```python
-   CAST_NAME = "Your Chromecast Name"
-   CAST_IP = "192.168.1.xxx"
-   SERVER_HOST = "192.168.1.xxx"  # Your computer's IP
-   ```
+```bash
+# Fast unit suite (no network, no secrets required)
+pipenv run pytest
+# or: make test
 
-2. **Ensure test videos exist** in `new/data/videos/`
+# yt-dlp canary: opt-in live integration test that downloads a known-good
+# clip and validates it. Skipped by default because it hits the network.
+pipenv run pytest -m integration --run-integration
+# or: make canary
+```
 
-3. **Run tests**:
-   ```bash
-   # Single video playback
-   python new/test_chromecast_playout.py
-
-   # Multi-video queue simulation
-   python new/test_playout_loop.py
-   ```
+The canary guards against YouTube changes that break `yt-dlp` downloads. A daily
+CI job (`.github/workflows/yt-dlp-canary.yml`) runs the same check, and
+`make build` runs `make preflight` (yt-dlp bump + canary) before building the
+Docker image.
 
 ## Docker Deployment
 
 ### Building
 
 ```bash
-# From repository root
-docker build -f new/Dockerfile -t karaoke-jukebox .
+# From the repository root
+docker build -t karaoke-jukebox .
 ```
 
 ### Running
@@ -289,7 +303,7 @@ docker build -f new/Dockerfile -t karaoke-jukebox .
 ```bash
 docker run -d \
   -p 8000:8000 \
-  -v $(pwd)/new/data:/app/data \
+  -v $(pwd)/data:/app/data \
   -e ADMIN_PASSWORD=your_password \
   -e YOUTUBE_API_KEY=your_key \
   -e SECRET_KEY=your_secret \
@@ -335,8 +349,8 @@ Changing `SECRET_KEY` invalidates all existing sessions. Users will need to log 
 
 ## Contributing Guidelines
 
-1. **Follow existing code style** - Run `ruff format` before committing
-2. **Test Chromecast changes** - Use test scripts to verify playback
+1. **Follow existing code style** - Run `ruff format` (or `make lint`) before committing
+2. **Run the tests** - `pipenv run pytest` (or `make test`) before committing
 3. **Keep HTMX patterns** - Frontend uses HTMX, not JavaScript frameworks
 4. **Document complex logic** - Especially threading/async interactions
 5. **Update this guide** - If you change architecture or setup
@@ -360,6 +374,7 @@ Changing `SECRET_KEY` invalidates all existing sessions. Users will need to log 
 ### Development
 
 - `ruff` - Linting and formatting
+- `pytest` - Test runner
 
 See `Pipfile` for complete dependency list with versions.
 

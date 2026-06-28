@@ -6,8 +6,9 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: karaoke-jukebox
-    # ports:
-    #   - "5051:5051"
+
+    # Load non-secret defaults and any overrides from .env
+    env_file: .env
 
     # NOTE: No volumes configured - database and videos are ephemeral
     # All data (queue, downloaded videos) will be lost on container restart
@@ -16,26 +17,28 @@ services:
     #   - ./data:/app/data
 
     environment:
-      # REQUIRED: Set these values before running
-      # SECRET_KEY minimum 32 characters long
-      # You can generate SECRET_KEY with:
+      # REQUIRED secrets - compose FAILS LOUDLY if any are unset in .env rather
+      # than booting with a known-public placeholder password.
+      # Generate SECRET_KEY (min 32 chars) with:
       #   python -c "import secrets; print(secrets.token_hex(32))"
-      - ADMIN_PASSWORD=your_secure_password_here
-      - YOUTUBE_API_KEY=your_youtube_api_key_here
-      - SECRET_KEY=your_secret_key_here
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set in .env}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY:?YOUTUBE_API_KEY must be set in .env}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
 
       # REQUIRED for Chromecast: Set to your Docker host's IP address
       # Find with: ip addr show (Linux) or ifconfig (macOS)
       # DO NOT use localhost or 127.0.0.1
-      - SERVER_HOST=192.168.1.100
+      - SERVER_HOST=${SERVER_HOST:?SERVER_HOST must be set in .env}
 
       # Optional: Adjust if needed
-      - SERVER_PORT=5051
+      - SERVER_PORT=8000
       - DATA_DIR=/app/data
-      - LOG_LEVEL=INFO
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
 
     restart: unless-stopped
 
-    # Network mode host can be used for better Chromecast discovery
-    # Uncomment below and comment out 'ports' section if needed
+    # Host networking is REQUIRED for Chromecast discovery: pychromecast relies
+    # on mDNS (UDP 5353) multicast, which does not traverse Docker's default
+    # bridge network. With host mode the container shares the host's network
+    # stack and can both discover casts and serve video URLs they can reach.
     network_mode: host

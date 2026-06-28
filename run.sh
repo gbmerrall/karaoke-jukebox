@@ -1,25 +1,24 @@
 #!/bin/bash
 # Development server runner for Karaoke Jukebox
+# Run from the repository root.
 
 set -e
 
-echo "🎤 Starting Karaoke Jukebox Development Server..."
+echo "Starting Karaoke Jukebox development server..."
 
-# Check if .env exists, if not copy from .env.example
+# Check if .env exists, if not tell the user how to create one
 if [ ! -f .env ]; then
-    echo "⚠️  .env file not found. Please create one from .env.example"
+    echo ".env file not found. Create one from .env.example:"
     echo "   cp .env.example .env"
-    echo "   Then edit .env with your actual values"
+    echo "   Then edit .env with your actual values (or run ./setup.sh)"
     exit 1
 fi
 
-# Check if we're in a virtual environment
+# The ASGI app object is app.main:app (same object the Docker image serves).
 if [ -z "$VIRTUAL_ENV" ]; then
-    echo "📦 Activating pipenv virtual environment..."
-    # Run with pipenv
-    cd ..
-    pipenv run python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --app-dir new
+    # Run inside the pipenv-managed environment
+    pipenv run python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 else
-    # Already in venv, just run
+    # Already inside a virtualenv, run directly
     python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 fi

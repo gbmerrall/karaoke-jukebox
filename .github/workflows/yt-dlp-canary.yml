@@ -1,0 +1,49 @@
+name: yt-dlp canary
+
+# Daily early-warning system for the most fragile dependency.
+#
+# This job bumps yt-dlp and runs the live integration test that downloads a
+# known-good clip from YouTube. A RED run means: YouTube changed and yt-dlp
+# needs a bump (locally: `make preflight` then rebuild). The scheduled-workflow
+# failure email IS the alert.
+#
+# No repo secrets are required: the test uses dummy env vars from conftest.py
+# and does not call the YouTube Data API.
+
+on:
+  schedule:
+    # 07:00 UTC daily
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Install deno (yt-dlp EJS JS-challenge solver)
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install pipenv
+        run: pip install pipenv
+
+      - name: Install dependencies
+        run: pipenv install --dev
+
+      - name: Update yt-dlp to latest
+        run: pipenv update yt-dlp
+
+      - name: Run yt-dlp canary (live download)
+        run: pipenv run pytest -m integration --run-integration
