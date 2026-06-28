@@ -12,6 +12,18 @@ import sys
 
 logger = logging.getLogger(__name__)
 
+# Known placeholder values shipped in example config files. Rejecting these at
+# startup stops a self-hoster from accidentally running with publicly-known
+# credentials (e.g. the values in .env.example / docker-compose.yml).
+_PLACEHOLDER_VALUES = {
+    "your_secure_password_here",
+    "your_secret_key_here",
+    "changeme",
+    "change_me",
+    "password",
+    "secret",
+}
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -25,7 +37,7 @@ class Settings(BaseSettings):
     # Queue Management
     queue_cleanup_threshold_hours: int = 4
     queue_cleanup_interval_hours: int = 1
-    max_queue_size: int = 0  # 0 means unlimited
+    max_queue_size: int = 50  # 0 means unlimited; default caps unbounded growth
 
     # Application Configuration
     secret_key: str
@@ -37,23 +49,28 @@ class Settings(BaseSettings):
     server_port: int = 8000
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore"
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
     )
 
-    @field_validator('admin_password')
+    @field_validator("admin_password")
     @classmethod
     def validate_admin_password(cls, v: str) -> str:
-        """Validate admin password is not empty and has minimum length."""
+        """Validate admin password is set, non-placeholder, and long enough."""
         if not v or len(v.strip()) == 0:
             raise ValueError("ADMIN_PASSWORD cannot be empty")
+        if v.strip().lower() in _PLACEHOLDER_VALUES:
+            raise ValueError(
+                "ADMIN_PASSWORD is set to a known placeholder value. "
+                "Choose a real, private password."
+            )
+        # Hard floor kept low to avoid locking out existing installs; brute
+        # force is mitigated by login rate limiting + constant-time compare.
+        # A short-password warning is emitted in load_settings().
         if len(v) < 4:
             raise ValueError("ADMIN_PASSWORD must be at least 4 characters")
         return v
 
-    @field_validator('youtube_api_key')
+    @field_validator("youtube_api_key")
     @classmethod
     def validate_youtube_api_key(cls, v: str) -> str:
         """Validate YouTube API key is not empty."""
@@ -61,20 +78,25 @@ class Settings(BaseSettings):
             raise ValueError("YOUTUBE_API_KEY cannot be empty")
         return v
 
-    @field_validator('secret_key')
+    @field_validator("secret_key")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
-        """Validate secret key is not empty and has minimum length."""
+        """Validate secret key is set, non-placeholder, and long enough."""
         if not v or len(v.strip()) == 0:
             raise ValueError("SECRET_KEY cannot be empty")
+        if v.strip().lower() in _PLACEHOLDER_VALUES:
+            raise ValueError(
+                "SECRET_KEY is set to a known placeholder value. Generate a real "
+                'one with: python -c "import secrets; print(secrets.token_hex(32))"'
+            )
         if len(v) < 32:
             raise ValueError(
                 "SECRET_KEY must be at least 32 characters for security. "
-                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
             )
         return v
 
-    @field_validator('log_level')
+    @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, v: str) -> str:
         """Validate log level is valid."""
@@ -190,20 +212,27 @@ def load_settings() -> Settings:
         System exit with code 1 if validation fails
     """
     try:
-        return Settings()
+        loaded = Settings()
+        if len(loaded.admin_password) < 12:
+            logger.warning(
+                "ADMIN_PASSWORD is shorter than 12 characters. Login is rate "
+                "limited, but a longer password is strongly recommended if this "
+                "instance is reachable beyond your trusted network."
+            )
+        return loaded
     except ValidationError as e:
         logger.error("=" * 60)
         logger.error("CONFIGURATION ERROR - Missing or invalid environment variables")
         logger.error("=" * 60)
 
         for error in e.errors():
-            field = error['loc'][0] if error['loc'] else 'unknown'
-            msg = error['msg']
+            field = error["loc"][0] if error["loc"] else "unknown"
+            msg = error["msg"]
 
             # Convert field name to env var format
             env_var = field.upper()
 
-            logger.error(f"❌ {env_var}: {msg}")
+            logger.error(f"  {env_var}: {msg}")
 
         logger.error("")
         logger.error("Required environment variables:")
@@ -212,7 +241,9 @@ def load_settings() -> Settings:
         logger.error("  - SECRET_KEY: Session signing key (min 32 characters)")
         logger.error("")
         logger.error("Optional environment variables:")
-        logger.error("  - LOG_LEVEL: Logging level - DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)")
+        logger.error(
+            "  - LOG_LEVEL: Logging level - DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)"
+        )
         logger.error("  - SERVER_HOST: Server IP for Chromecast (auto-detected in dev)")
         logger.error("  - SERVER_PORT: Server port (default: 8000)")
         logger.error("  - DATA_DIR: Data directory path (default: ./data)")
