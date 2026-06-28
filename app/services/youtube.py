@@ -57,16 +57,18 @@ class YouTubeService:
         try:
             # Search for videos (run in thread pool as API is synchronous)
             search_response = await asyncio.to_thread(
-                lambda: self.youtube.search()
-                .list(
-                    q=search_query,
-                    part="id,snippet",
-                    type="video",
-                    maxResults=max_results,
-                    order="relevance",  # Order by relevance (best match)
-                    videoCategoryId="10",  # Music category
+                lambda: (
+                    self.youtube.search()
+                    .list(
+                        q=search_query,
+                        part="id,snippet",
+                        type="video",
+                        maxResults=max_results,
+                        order="relevance",  # Order by relevance (best match)
+                        videoCategoryId="10",  # Music category
+                    )
+                    .execute()
                 )
-                .execute()
             )
 
             video_ids = [
@@ -79,9 +81,13 @@ class YouTubeService:
 
             # Get detailed video statistics and content details
             videos_response = await asyncio.to_thread(
-                lambda: self.youtube.videos()
-                .list(id=",".join(video_ids), part="snippet,contentDetails,statistics")
-                .execute()
+                lambda: (
+                    self.youtube.videos()
+                    .list(
+                        id=",".join(video_ids), part="snippet,contentDetails,statistics"
+                    )
+                    .execute()
+                )
             )
 
             results = []

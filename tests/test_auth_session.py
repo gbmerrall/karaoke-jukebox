@@ -10,9 +10,15 @@ def test_round_trip():
 
 
 def test_tampered_token_rejected():
-    """Flipping a character invalidates the signature."""
+    """Corrupting the signed payload invalidates the signature.
+
+    The first character belongs to the base64url payload, whose bits are always
+    significant. Flipping it deterministically breaks the signature. (Flipping
+    only the final base64 char can be a no-op because its low bits may be
+    don't-care padding, which would make this test flaky.)
+    """
     token = auth.encode_session({"username": "alice", "is_admin": False})
-    tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
+    tampered = ("B" if token[0] != "B" else "C") + token[1:]
     assert auth.decode_session(tampered) is None
 
 
