@@ -22,6 +22,7 @@ yt-dlp = "*"
 ruff = "*"
 pytest = "*"
 pytest-asyncio = "*"
+pytest-cov = "*"
 
 [requires]
 python_version = "3.13"
