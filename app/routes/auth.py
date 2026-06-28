@@ -140,9 +140,7 @@ async def login_page(request: Request, error: Optional[str] = None):
         redirect_url = "/admin" if is_admin else "/app"
         return RedirectResponse(url=redirect_url, status_code=302)
 
-    return templates.TemplateResponse(
-        "login.html", {"request": request, "error_message": error}
-    )
+    return templates.TemplateResponse(request, "login.html", {"error_message": error})
 
 
 @router.post("/login")

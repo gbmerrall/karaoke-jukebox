@@ -35,9 +35,9 @@ async def admin_page(request: Request):
     logger.info(f"Admin page accessed by {username}")
 
     return templates.TemplateResponse(
+        request,
         "admin.html",
         {
-            "request": request,
             "username": username,
             "is_admin": is_admin,
             "queue": queue,

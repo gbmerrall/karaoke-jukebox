@@ -50,9 +50,9 @@ async def app_page(request: Request, user_data: tuple = Depends(require_session)
     logger.debug(f"App page queue: {len(queue)} items for {username}")
 
     return templates.TemplateResponse(
+        request,
         "app.html",
         {
-            "request": request,
             "username": username,
             "is_admin": is_admin,
             "queue": queue,
@@ -63,7 +63,7 @@ async def app_page(request: Request, user_data: tuple = Depends(require_session)
 @router.get("/search", response_class=HTMLResponse)
 async def search_form(request: Request):
     """Return the search form partial (for HTMX)."""
-    return templates.TemplateResponse("partials/search_form.html", {"request": request})
+    return templates.TemplateResponse(request, "partials/search_form.html", {})
 
 
 @router.post("/search", response_class=HTMLResponse)
@@ -76,15 +76,16 @@ async def search(request: Request, query: str = Form(...)):
 
     if not query.strip():
         return templates.TemplateResponse(
+            request,
             "partials/search_results.html",
-            {"request": request, "results": [], "error": "Please enter a search query"},
+            {"results": [], "error": "Please enter a search query"},
         )
 
     if not _search_limiter.allow(_rate_limit_key(request, username)):
         return templates.TemplateResponse(
+            request,
             "partials/search_results.html",
             {
-                "request": request,
                 "results": [],
                 "error": "Too many searches. Please slow down and try again shortly.",
             },
@@ -99,9 +100,9 @@ async def search(request: Request, query: str = Form(...)):
         )
 
         return templates.TemplateResponse(
+            request,
             "partials/search_results.html",
             {
-                "request": request,
                 "results": results,
                 "username": username,
                 "error": None,
@@ -110,15 +111,16 @@ async def search(request: Request, query: str = Form(...)):
 
     except YouTubeError as e:
         return templates.TemplateResponse(
+            request,
             "partials/search_results.html",
-            {"request": request, "results": [], "error": e.user_message},
+            {"results": [], "error": e.user_message},
         )
     except Exception as e:
         logger.error(f"Search error: {e}")
         return templates.TemplateResponse(
+            request,
             "partials/search_results.html",
             {
-                "request": request,
                 "results": [],
                 "error": "Search failed. Please try again.",
             },
@@ -145,9 +147,9 @@ async def queue_video(
 
     if not username:
         return templates.TemplateResponse(
+            request,
             "partials/modals.html",
             {
-                "request": request,
                 "modal_type": "error",
                 "message": "You must be logged in to queue videos",
             },
@@ -156,16 +158,17 @@ async def queue_video(
     # Reject malformed video IDs before they touch the filesystem or yt-dlp.
     if not is_valid_video_id(video_id):
         return templates.TemplateResponse(
+            request,
             "partials/modals.html",
-            {"request": request, "modal_type": "error", "message": "Invalid video."},
+            {"modal_type": "error", "message": "Invalid video."},
         )
 
     # Throttle queueing per user to prevent download/disk/bandwidth abuse.
     if not _queue_limiter.allow(_rate_limit_key(request, username)):
         return templates.TemplateResponse(
+            request,
             "partials/modals.html",
             {
-                "request": request,
                 "modal_type": "error",
                 "message": "You're queueing too fast. Please wait a moment.",
             },
@@ -189,9 +192,9 @@ async def queue_video(
             )
 
             return templates.TemplateResponse(
+                request,
                 "partials/modals.html",
                 {
-                    "request": request,
                     "modal_type": "info",
                     "message": f"Downloading '{title}'... It will be added to the queue shortly.",
                 },
@@ -210,9 +213,9 @@ async def queue_video(
             logger.info(f"Queued (already downloaded): {title} by {username}")
 
             return templates.TemplateResponse(
+                request,
                 "partials/modals.html",
                 {
-                    "request": request,
                     "modal_type": "success",
                     "message": f"'{title}' added to queue!",
                 },
@@ -222,15 +225,16 @@ async def queue_video(
         # Queue validation error (duplicate, queue full, etc.)
         logger.warning(f"Queue validation error: {e}")
         return templates.TemplateResponse(
+            request,
             "partials/modals.html",
-            {"request": request, "modal_type": "error", "message": str(e)},
+            {"modal_type": "error", "message": str(e)},
         )
     except Exception as e:
         logger.error(f"Error queueing video: {e}", exc_info=True)
         return templates.TemplateResponse(
+            request,
             "partials/modals.html",
             {
-                "request": request,
                 "modal_type": "error",
                 "message": "Failed to queue video. Please try again.",
             },
