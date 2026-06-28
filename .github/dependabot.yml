@@ -3,11 +3,11 @@
 # Two ecosystems are watched:
 #
 # 1. uv      - Python deps. Dependabot reads pyproject.toml and updates uv.lock
-#              directly (native uv support). This is the source of truth for
-#              dependencies. Note: requirements.txt is a GENERATED artifact
-#              (uv export from uv.lock) and is intentionally NOT watched here -
-#              `make preflight` / `make requirements` regenerates it from the
-#              lockfile at deploy time, so Dependabot only needs to touch uv.lock.
+#              directly (native uv support). uv.lock is the single source of
+#              truth and the ONLY dependency manifest committed to the repo.
+#              requirements.txt is generated from uv.lock at Docker build time
+#              (in the Dockerfile's `export` stage) and is gitignored, so
+#              Dependabot never sees it - it updates uv.lock and nothing else.
 #
 # 2. github-actions - keeps the workflow action versions (setup-uv, setup-deno,
 #              checkout, etc.) current.

@@ -142,8 +142,9 @@ The application code lives at the repository root under `app/`.
 ├── Dockerfile               # Production container
 ├── docker-compose.yml       # Compose deployment
 ├── pyproject.toml           # Dependencies (project + dev group) and tooling config (ruff, pytest)
-├── uv.lock                  # Committed lockfile for reproducible installs (dev source of truth)
-└── requirements.txt         # Generated from uv.lock (uv export); installed by the Docker image
+└── uv.lock                  # Committed lockfile - single source of truth for deps
+                             # (requirements.txt is generated from it at Docker
+                             #  build time and is gitignored, not committed)
 ```
 
 ### Key Architectural Patterns

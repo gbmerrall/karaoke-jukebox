@@ -31,6 +31,10 @@ ENV/
 .env
 .venv
 # uv.lock IS committed for reproducible installs (see pyproject.toml)
+# requirements.txt is NOT committed: it is generated from uv.lock at Docker
+# build time (uv export, in the Dockerfile's `export` stage). uv.lock is the
+# single source of truth, so Dependabot updates it directly.
+requirements.txt
 
 # Database
 *.db

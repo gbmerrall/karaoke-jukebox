@@ -15,8 +15,9 @@
 test:
 	uv run pytest
 
-# Regenerate the Docker dependency manifest from the uv lockfile. requirements.txt
-# is a generated artifact (runtime deps only); the Docker image installs from it.
+# Optional local helper: write a requirements.txt from the uv lockfile (e.g. to
+# inspect the resolved runtime set). NOT needed for Docker - the image's `export`
+# stage generates its own from uv.lock at build time. The file is gitignored.
 requirements:
 	uv export --frozen --no-dev --no-hashes --no-emit-project -o requirements.txt
 
@@ -24,11 +25,11 @@ requirements:
 canary:
 	uv run pytest -m integration --run-integration
 
-# Deploy gate: pull the latest yt-dlp (updating uv.lock), refresh the Docker
-# manifest so the bump reaches the image, then prove downloads still work.
+# Deploy gate: pull the latest yt-dlp (updating uv.lock), then prove downloads
+# still work. The Docker build regenerates requirements.txt from uv.lock itself,
+# so the yt-dlp bump reaches the image without a separate export step here.
 preflight:
 	uv sync --upgrade-package yt-dlp
-	$(MAKE) requirements
 	$(MAKE) canary
 
 # Build the image only if preflight (yt-dlp bump + canary) passed.

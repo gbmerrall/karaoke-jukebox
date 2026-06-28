@@ -87,9 +87,11 @@ Open your browser to: **http://localhost:8000**
 docker build -t karaoke-jukebox .
 ```
 
-The image installs Python dependencies from `requirements.txt`, which is a
-generated artifact exported from `uv.lock` (see "Keeping downloads working"
-below). uv itself is not required to build or run the image.
+The image is multi-stage. A short `export` stage uses `uv` to generate
+`requirements.txt` from the committed `uv.lock`; the runtime stage then
+`pip install`s it. `uv.lock` is the single source of truth, `requirements.txt`
+is generated at build time (not committed), and `uv` never ends up in the
+runtime image.
 
 ### Run the Container
 
@@ -158,7 +160,7 @@ How this project stays ahead of breakage:
   `make build` depends on `preflight`, so the Docker image will only build if a
   freshly-updated yt-dlp can still download:
   ```bash
-  make preflight         # bump yt-dlp + regenerate requirements.txt + canary
+  make preflight         # bump yt-dlp (updates uv.lock) + canary
   make build             # preflight, then docker build
   ```
 - **Daily CI canary**: `.github/workflows/yt-dlp-canary.yml` runs the same
@@ -167,7 +169,8 @@ How this project stays ahead of breakage:
   rebuild usually picks up the fix.
 
 To recover from broken downloads: run `make preflight` locally, commit the
-updated `uv.lock` and `requirements.txt`, and rebuild the image.
+updated `uv.lock`, and rebuild the image (the build regenerates
+`requirements.txt` from `uv.lock` automatically).
 
 ## Development
 
