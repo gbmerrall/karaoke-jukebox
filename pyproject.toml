@@ -1,3 +1,39 @@
+[project]
+name = "karaoke-jukebox"
+version = "2.0.0"
+description = "Mobile-first karaoke jukebox web app with Chromecast playback"
+requires-python = ">=3.13"
+dependencies = [
+    "aiosqlite",
+    "apscheduler",
+    "fastapi",
+    "google-api-python-client",
+    "gunicorn",
+    "isodate",
+    "itsdangerous",
+    "jinja2",
+    "pychromecast",
+    "pydantic-settings",
+    "python-multipart",
+    "uvicorn[standard]",
+    # yt-dlp is the most fragile dependency; the [default] extra pulls the EJS
+    # JS-challenge solver. Keep it current (see `make preflight`).
+    "yt-dlp[default]>=2026.6.9",
+]
+
+# No [build-system]: this is a web app, not an installable package. uv manages
+# the environment without trying to build/install the project itself. The ASGI
+# app object is imported as app.main:app from the repository root.
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.5.0",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "ruff",
+]
+
 [tool.pytest.ini_options]
 # asyncio_mode = "auto" lets us write `async def test_...` without decorating
 # every test with @pytest.mark.asyncio.

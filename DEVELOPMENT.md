@@ -30,9 +30,13 @@ Karaoke Jukebox is a mobile-first web application for group karaoke parties. Use
   # Windows
   # Download from https://ffmpeg.org/download.html
   ```
-- **Pipenv** - Python dependency management
+- **uv** - Python dependency management
   ```bash
-  pip install pipenv
+  # Standalone installer
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+
+  # Or via Homebrew
+  brew install uv
   ```
 
 ### API Keys
@@ -52,11 +56,8 @@ You'll need a **YouTube Data API v3 key**:
 git clone <repository-url>
 cd karaoke-jukebox
 
-# Install dependencies
-pipenv install
-
-# For development dependencies (linting, formatting)
-pipenv install --dev
+# Install dependencies (runtime + dev tools by default)
+uv sync
 ```
 
 ### 2. Environment Configuration
@@ -90,8 +91,8 @@ make run
 # Shell script
 ./run.sh
 
-# Directly with pipenv
-pipenv run python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# Directly with uv
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 The application will be available at `http://localhost:8000`
@@ -140,9 +141,9 @@ The application code lives at the repository root under `app/`.
 ├── setup.sh                 # First-time environment setup
 ├── Dockerfile               # Production container
 ├── docker-compose.yml       # Compose deployment
-├── Pipfile                  # Pipenv dependencies
-├── requirements.txt         # Pinned dependencies (used by Docker)
-└── pyproject.toml           # Tooling config (ruff, pytest)
+├── pyproject.toml           # Dependencies (project + dev group) and tooling config (ruff, pytest)
+├── uv.lock                  # Committed lockfile for reproducible installs (dev source of truth)
+└── requirements.txt         # Generated from uv.lock (uv export); installed by the Docker image
 ```
 
 ### Key Architectural Patterns
@@ -208,7 +209,7 @@ CREATE TABLE queue (
 # Development mode with auto-reload
 make run
 # or: ./run.sh
-# or: pipenv run python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# or: uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # Access the application
 # User view: http://localhost:8000
@@ -219,13 +220,13 @@ make run
 
 ```bash
 # Lint code
-pipenv run ruff check .
+uv run ruff check .
 
 # Format code
-pipenv run ruff format .
+uv run ruff format .
 
 # Run both before committing (or use: make lint)
-pipenv run ruff format . && pipenv run ruff check .
+uv run ruff format . && uv run ruff check .
 ```
 
 ### Adding a New Feature
@@ -275,12 +276,12 @@ The test suite lives in `tests/` and uses **pytest**.
 
 ```bash
 # Fast unit suite (no network, no secrets required)
-pipenv run pytest
+uv run pytest
 # or: make test
 
 # yt-dlp canary: opt-in live integration test that downloads a known-good
 # clip and validates it. Skipped by default because it hits the network.
-pipenv run pytest -m integration --run-integration
+uv run pytest -m integration --run-integration
 # or: make canary
 ```
 
@@ -350,7 +351,7 @@ Changing `SECRET_KEY` invalidates all existing sessions. Users will need to log 
 ## Contributing Guidelines
 
 1. **Follow existing code style** - Run `ruff format` (or `make lint`) before committing
-2. **Run the tests** - `pipenv run pytest` (or `make test`) before committing
+2. **Run the tests** - `uv run pytest` (or `make test`) before committing
 3. **Keep HTMX patterns** - Frontend uses HTMX, not JavaScript frameworks
 4. **Document complex logic** - Especially threading/async interactions
 5. **Update this guide** - If you change architecture or setup
@@ -376,5 +377,7 @@ Changing `SECRET_KEY` invalidates all existing sessions. Users will need to log 
 - `ruff` - Linting and formatting
 - `pytest` - Test runner
 
-See `Pipfile` for complete dependency list with versions.
+See `pyproject.toml` for the complete dependency list (`[project].dependencies` and
+the `[dependency-groups].dev` group), with `uv.lock` pinning exact versions. Python
+3.13 is pinned via `.python-version`.
 

@@ -30,7 +30,7 @@ env/
 ENV/
 .env
 .venv
-Pipfile.lock
+# uv.lock IS committed for reproducible installs (see pyproject.toml)
 
 # Database
 *.db

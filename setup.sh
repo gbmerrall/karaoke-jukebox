@@ -39,6 +39,6 @@ fi
 
 echo ""
 echo "Setup complete. Install dependencies and run the server with:"
-echo "   pipenv install --dev"
+echo "   uv sync"
 echo "   ./run.sh          (or)    make run"
 echo ""

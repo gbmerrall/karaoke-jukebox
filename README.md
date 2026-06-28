@@ -40,10 +40,10 @@ Option 2: Make target
 make run
 ```
 
-Option 3: Directly with pipenv (from the repository root)
+Option 3: Directly with uv (from the repository root)
 ```bash
-pipenv install --dev
-pipenv run python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uv sync
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### 4. Access the App
@@ -74,7 +74,8 @@ Open your browser to: **http://localhost:8000**
   - Ubuntu/Debian: `sudo apt-get install ffmpeg`
   - Windows: Download from https://ffmpeg.org/download.html
 - **deno** - Required at runtime for yt-dlp's JS-challenge solver (downloads fail without it)
-- All dependencies in `Pipfile` (install with `pipenv install --dev` from the repository root)
+- **uv** - Python dependency management (install with `curl -LsSf https://astral.sh/uv/install.sh | sh` or `brew install uv`)
+- All dependencies in `pyproject.toml` (install with `uv sync` from the repository root; `uv.lock` pins exact versions)
 - **YouTube Data API v3 key**
 - **Chromecast device** on the same network (for playback)
 
@@ -147,13 +148,13 @@ How this project stays ahead of breakage:
 - **Canary test**: an opt-in integration test downloads a known-good clip and
   validates it. It hits the live network, so it is skipped by default.
   ```bash
-  make canary            # pipenv run pytest -m integration --run-integration
+  make canary            # uv run pytest -m integration --run-integration
   ```
 - **Deploy gate**: `make preflight` bumps yt-dlp and then runs the canary.
   `make build` depends on `preflight`, so the Docker image will only build if a
   freshly-updated yt-dlp can still download:
   ```bash
-  make preflight         # pipenv update yt-dlp + canary
+  make preflight         # bump yt-dlp + regenerate requirements.txt + canary
   make build             # preflight, then docker build
   ```
 - **Daily CI canary**: `.github/workflows/yt-dlp-canary.yml` runs the same
@@ -162,7 +163,7 @@ How this project stays ahead of breakage:
   rebuild usually picks up the fix.
 
 To recover from broken downloads: run `make preflight` locally, commit the
-updated lockfile/`requirements.txt`, and rebuild the image.
+updated `uv.lock` and `requirements.txt`, and rebuild the image.
 
 ## Development
 

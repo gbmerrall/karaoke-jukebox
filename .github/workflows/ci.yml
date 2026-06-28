@@ -14,19 +14,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.13'
-
-      - name: Install pipenv
-        run: pip install pipenv
+          enable-cache: true
 
       - name: Install dependencies
-        run: pipenv install --dev
+        # uv reads .python-version (3.13) and provisions the interpreter; uv.lock
+        # pins everything for a reproducible install. Includes the dev group.
+        run: uv sync --frozen
 
       - name: Lint
-        run: pipenv run ruff check .
+        run: uv run ruff check .
 
       - name: Run fast tests
-        run: pipenv run pytest
+        run: uv run pytest

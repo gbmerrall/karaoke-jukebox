@@ -15,10 +15,6 @@ if [ ! -f .env ]; then
 fi
 
 # The ASGI app object is app.main:app (same object the Docker image serves).
-if [ -z "$VIRTUAL_ENV" ]; then
-    # Run inside the pipenv-managed environment
-    pipenv run python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-else
-    # Already inside a virtualenv, run directly
-    python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-fi
+# `uv run` resolves and uses the project's managed environment automatically,
+# syncing it from uv.lock if needed - no manual venv activation required.
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

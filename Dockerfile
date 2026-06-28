@@ -1,7 +1,11 @@
 # Karaoke Jukebox - Docker Image
-# Multi-stage build for optimized production image
+# Native pip build. Dependencies are installed from requirements.txt, which is
+# a generated artifact exported from the uv lockfile (the dev source of truth):
+#   uv export --frozen --no-dev --no-hashes --no-emit-project -o requirements.txt
+# `make preflight` regenerates it after bumping yt-dlp, so the image stays in
+# sync with uv.lock. uv itself is NOT needed at image build or run time.
 
-FROM python:3.13-slim as base
+FROM python:3.13-slim AS base
 
 # Set Python environment variables
 ENV PYTHONUNBUFFERED=1 \

@@ -10,7 +10,7 @@ file).
 It is an OPT-IN integration test: it hits the live network and runs the real
 yt-dlp + ffmpeg toolchain. Run it explicitly with:
 
-    pipenv run pytest -m integration --run-integration
+    uv run pytest -m integration --run-integration
 
 A passing run is the canary that tells you the YouTube download flow still works
 after a yt-dlp/YouTube change. A failure almost always means "bump yt-dlp".
@@ -101,7 +101,7 @@ async def test_download_known_good_video_produces_playable_mp4(isolated_videos_d
         pytest.fail(
             f"Download failed for {KNOWN_GOOD_VIDEO_ID}: {e}. "
             "This usually means yt-dlp needs updating "
-            "(pipenv update yt-dlp) to keep up with YouTube."
+            "(make preflight, or uv sync --upgrade-package yt-dlp) to keep up with YouTube."
         )
         return  # unreachable (pytest.fail raises); keeps static analysis happy
 

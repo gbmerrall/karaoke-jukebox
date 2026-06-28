@@ -23,11 +23,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
 
@@ -36,14 +31,15 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Install pipenv
-        run: pip install pipenv
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
-      - name: Install dependencies
-        run: pipenv install --dev
-
-      - name: Update yt-dlp to latest
-        run: pipenv update yt-dlp
+      - name: Install dependencies and bump yt-dlp to latest
+        # --upgrade-package pulls the newest yt-dlp (updating uv.lock in-job)
+        # while installing the rest of the environment, including the dev group.
+        run: uv sync --upgrade-package yt-dlp
 
       - name: Run yt-dlp canary (live download)
-        run: pipenv run pytest -m integration --run-integration
+        run: uv run pytest -m integration --run-integration
