@@ -1,0 +1,60 @@
+# Dependabot configuration
+#
+# Two ecosystems are watched:
+#
+# 1. uv      - Python deps. Dependabot reads pyproject.toml and updates uv.lock
+#              directly (native uv support). This is the source of truth for
+#              dependencies. Note: requirements.txt is a GENERATED artifact
+#              (uv export from uv.lock) and is intentionally NOT watched here -
+#              `make preflight` / `make requirements` regenerates it from the
+#              lockfile at deploy time, so Dependabot only needs to touch uv.lock.
+#
+# 2. github-actions - keeps the workflow action versions (setup-uv, setup-deno,
+#              checkout, etc.) current.
+#
+# yt-dlp drift: the primary motivation. yt-dlp breaks when YouTube changes, and
+# the fix is almost always a version bump. Dependabot opens a PR as soon as a new
+# yt-dlp release lands; the daily canary workflow tells you WHEN a bump is needed,
+# Dependabot provides the bump. yt-dlp is grouped on its own so its (frequent)
+# updates do not get buried in a batch with everything else.
+
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "deps"
+    groups:
+      # yt-dlp on its own - it bumps often and is deploy-critical.
+      yt-dlp:
+        patterns:
+          - "yt-dlp"
+      # Batch the rest of the runtime/dev churn into one PR per week.
+      python-deps:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "yt-dlp"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
