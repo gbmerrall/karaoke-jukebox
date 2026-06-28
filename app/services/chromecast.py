@@ -30,6 +30,11 @@ MIN_PLAY_TIME_BEFORE_IDLE_CHECK = 5  # seconds - avoid false positives during bu
 MAX_SONG_DURATION = 20 * 60  # 20 minutes - safety timeout
 POLL_INTERVAL = 2  # seconds - how often to check playback status
 
+# After this many consecutive failed playback attempts, a song is marked
+# 'completed' and dropped from the active queue so it cannot block every other
+# song behind it (head-of-line starvation).
+MAX_PLAYBACK_RETRIES = 3
+
 
 class DiscoveryListener(AbstractCastListener):
     """Listener for Chromecast discovery events."""
@@ -71,6 +76,10 @@ class ChromecastService:
         self.skip_requested = threading.Event()
         self.stop_requested = threading.Event()
 
+        # queue_id -> consecutive failure count. Only touched by the single
+        # playout thread, so it needs no lock.
+        self._failure_counts: Dict[int, int] = {}
+
         # Main event loop reference for cross-thread async calls
         self.main_loop: Optional[asyncio.AbstractEventLoop] = None
 
@@ -98,10 +107,18 @@ class ChromecastService:
         Returns:
             List of device dictionaries with 'name' and 'uuid' keys
         """
-        # Disconnect any existing Chromecast connection before scanning
+        # Do not tear down an active playback session to scan. The playout
+        # thread holds and uses this same cast object; disconnecting it here
+        # would kill the current song. Scan without disconnecting instead.
+        if self.is_playing:
+            logger.warning("Scan requested during playback - keeping active connection")
+
+        # Disconnect any existing (idle) Chromecast connection before scanning
         with self.playout_lock:
-            if self.connected_cast:
-                logger.info(f"Disconnecting existing Chromecast: {self.connected_cast.name}")
+            if self.connected_cast and not self.is_playing:
+                logger.info(
+                    f"Disconnecting existing Chromecast: {self.connected_cast.name}"
+                )
                 try:
                     if not self.connected_cast.is_idle:
                         self.connected_cast.quit_app()
@@ -130,10 +147,7 @@ class ChromecastService:
 
             # Collect discovered devices from browser.services
             self.discovered_devices = [
-                {
-                    "name": service.friendly_name,
-                    "uuid": str(service.uuid)
-                }
+                {"name": service.friendly_name, "uuid": str(service.uuid)}
                 for service in browser.services.values()
             ]
 
@@ -192,8 +206,7 @@ class ChromecastService:
             self.skip_requested.clear()
 
             self.playout_thread = threading.Thread(
-                target=self._playout_loop,
-                daemon=True
+                target=self._playout_loop, daemon=True
             )
             self.playout_thread.start()
 
@@ -216,6 +229,25 @@ class ChromecastService:
             logger.info("Stop signal sent to playout loop")
 
         return {"success": True, "message": "Playback stopped"}
+
+    def shutdown(self, timeout: float = 10.0) -> None:
+        """Stop playback and join the playout thread for a clean exit.
+
+        Called during application shutdown so the Chromecast app is quit and the
+        background thread is not abandoned mid-operation.
+
+        Args:
+            timeout: Seconds to wait for the playout thread to finish.
+        """
+        logger.info("Shutting down Chromecast service")
+        self.stop_requested.set()
+        with self.playout_lock:
+            self.is_playing = False
+        thread = self.playout_thread
+        if thread and thread.is_alive():
+            thread.join(timeout=timeout)
+            if thread.is_alive():
+                logger.warning("Playout thread did not stop within timeout")
 
     def skip_current(self) -> Dict:
         """
@@ -294,13 +326,18 @@ class ChromecastService:
 
                 # Play the video
                 should_remove_from_queue = False  # Default: keep in queue (only remove if completed or skipped)
+                playback_failed = (
+                    False  # True only on ERROR/UNKNOWN/exception (not stop)
+                )
                 try:
                     # Use BUFFERED stream type for video files (not LIVE)
                     cast.play_media(video_url, "video/mp4", stream_type="BUFFERED")
 
                     # Wait for media session to become active
                     logger.info("Waiting for media session...")
-                    session_started = cast.media_controller.session_active_event.wait(timeout=30)
+                    session_started = cast.media_controller.session_active_event.wait(
+                        timeout=30
+                    )
                     if not session_started:
                         logger.warning(f"Media session did not start for: {title}")
                         continue
@@ -314,13 +351,27 @@ class ChromecastService:
                     time.sleep(0.5)
                     logger.debug("Status refresh delay complete, starting monitoring")
 
+                    playback_start = time.monotonic()
+
                     # Wait for playback to finish or be interrupted
                     while True:
+                        # Safety timeout: never monitor a single song forever
+                        # (e.g. stuck in PLAYING/BUFFERING). Advance the queue.
+                        if time.monotonic() - playback_start > MAX_SONG_DURATION:
+                            logger.warning(
+                                f"Max song duration exceeded for: {title} - advancing"
+                            )
+                            cast.media_controller.stop()
+                            should_remove_from_queue = True
+                            break
+
                         # Check for stop/skip
                         if self.stop_requested.is_set():
                             logger.info("Stop requested during playback")
                             cast.media_controller.stop()
-                            should_remove_from_queue = False  # Keep in queue when stopped
+                            should_remove_from_queue = (
+                                False  # Keep in queue when stopped
+                            )
                             break
 
                         if self.skip_requested.is_set():
@@ -343,45 +394,72 @@ class ChromecastService:
                                 # INTERRUPTED means a new media is loading - keep waiting
                                 # None means transitioning between media - keep waiting
                                 if idle_reason == "INTERRUPTED" or idle_reason is None:
-                                    logger.debug(f"IDLE ({idle_reason}) - new media loading, continuing...")
+                                    logger.debug(
+                                        f"IDLE ({idle_reason}) - new media loading, continuing..."
+                                    )
                                     time.sleep(POLL_INTERVAL)
                                     continue
 
                                 # FINISHED means playback completed successfully
                                 if idle_reason == "FINISHED":
                                     logger.info(f"Finished playing: {title}")
-                                    should_remove_from_queue = True  # Remove when finished
+                                    should_remove_from_queue = (
+                                        True  # Remove when finished
+                                    )
                                     break
 
-                                # ERROR means playback failed - keep in queue to retry
+                                # ERROR means playback failed - retry up to a cap
                                 if idle_reason == "ERROR":
-                                    logger.error(f"Playback error for: {title} - keeping in queue")
-                                    should_remove_from_queue = False  # Keep in queue
+                                    logger.error(f"Playback error for: {title}")
+                                    should_remove_from_queue = False
+                                    playback_failed = True
                                     break
 
                                 # Any other idle reason (CANCELLED, etc.) - keep in queue
-                                logger.warning(f"Idle: {idle_reason} - {title} - keeping in queue")
-                                should_remove_from_queue = False  # Keep in queue
+                                logger.warning(
+                                    f"Idle: {idle_reason} - {title} - keeping in queue"
+                                )
+                                should_remove_from_queue = False
+                                playback_failed = True
                                 break
 
                             elif state == "UNKNOWN":
-                                logger.warning(f"Unknown player state for: {title} - keeping in queue")
-                                should_remove_from_queue = False  # Keep in queue
+                                logger.warning(f"Unknown player state for: {title}")
+                                should_remove_from_queue = False
+                                playback_failed = True
                                 break
 
                         time.sleep(POLL_INTERVAL)
 
                 except Exception as e:
-                    logger.error(f"Error playing {title}: {e} - keeping in queue", exc_info=True)
-                    should_remove_from_queue = False  # Keep in queue to retry
+                    logger.error(f"Error playing {title}: {e}", exc_info=True)
+                    should_remove_from_queue = False
+                    playback_failed = True
 
-                # Remove from queue only if appropriate
+                # Decide the fate of this queue item.
                 if should_remove_from_queue:
+                    # Played to completion or skipped: drop it and reset failures.
                     logger.info(f"Removing from queue: {title}")
+                    self._failure_counts.pop(queue_id, None)
                     self._remove_from_queue_sync(queue_id)
+                elif playback_failed:
+                    # Count the failure; give up (mark completed) past the cap so
+                    # a permanently-broken song cannot block the whole queue.
+                    failures = self._failure_counts.get(queue_id, 0) + 1
+                    self._failure_counts[queue_id] = failures
+                    if failures >= MAX_PLAYBACK_RETRIES:
+                        logger.error(
+                            f"Giving up on '{title}' after {failures} failed attempts; "
+                            "marking completed so the queue can advance"
+                        )
+                        self._failure_counts.pop(queue_id, None)
+                        self._update_status_sync(queue_id, "completed")
+                    else:
+                        logger.info(f"Keeping in queue (attempt {failures}): {title}")
+                        self._update_status_sync(queue_id, "queued")
                 else:
+                    # Stopped by admin: keep it queued, do not count as a failure.
                     logger.info(f"Keeping in queue: {title}")
-                    # Reset status back to queued
                     self._update_status_sync(queue_id, "queued")
 
                 # Brief pause before next song
@@ -429,12 +507,19 @@ class ChromecastService:
             cast = None
             for uuid, service in browser.services.items():
                 if str(uuid) == device_uuid:
-                    # Get the Chromecast object
-                    chromecasts, _ = pychromecast.get_listed_chromecasts(friendly_names=[service.friendly_name])
-                    if chromecasts:
-                        cast = chromecasts[0]
-                        cast.wait()
-                        logger.info(f"Connected to Chromecast: {cast.name}")
+                    # Get the Chromecast object. get_listed_chromecasts spins up
+                    # its own browser/zeroconf which must be stopped to avoid
+                    # leaking an mDNS browser thread on every connection.
+                    chromecasts, host_browser = pychromecast.get_listed_chromecasts(
+                        friendly_names=[service.friendly_name]
+                    )
+                    try:
+                        if chromecasts:
+                            cast = chromecasts[0]
+                            cast.wait()
+                            logger.info(f"Connected to Chromecast: {cast.name}")
+                    finally:
+                        pychromecast.discovery.stop_discovery(host_browser)
                     break
 
             # Stop discovery
@@ -464,6 +549,7 @@ class ChromecastService:
             )
 
         try:
+
             async def get_queue():
                 async with get_db() as db:
                     cursor = await db.execute(
@@ -497,6 +583,7 @@ class ChromecastService:
             )
 
         try:
+
             async def remove():
                 async with get_db() as db:
                     await db.execute("DELETE FROM queue WHERE id = ?", (queue_id,))
@@ -504,6 +591,7 @@ class ChromecastService:
 
                 # Import here to avoid circular dependency
                 from app.services.queue_manager import queue_manager
+
                 await queue_manager.broadcast_queue_update()
 
             # Schedule coroutine on main event loop from this thread
@@ -529,15 +617,16 @@ class ChromecastService:
             )
 
         try:
+
             async def update():
                 async with get_db() as db:
                     await db.execute(
-                        "UPDATE queue SET status = ? WHERE id = ?",
-                        (status, queue_id)
+                        "UPDATE queue SET status = ? WHERE id = ?", (status, queue_id)
                     )
                     await db.commit()
 
                 from app.services.queue_manager import queue_manager
+
                 await queue_manager.broadcast_queue_update()
 
             # Schedule coroutine on main event loop from this thread

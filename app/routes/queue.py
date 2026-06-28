@@ -49,7 +49,7 @@ async def queue_sse(request: Request):
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",  # Disable nginx buffering
-        }
+        },
     )
 
 
@@ -68,24 +68,21 @@ async def delete_queue_item(request: Request, queue_id: int):
 
     try:
         removed = await queue_manager.remove_from_queue(
-            queue_id=queue_id,
-            username=username,
-            is_admin=is_admin
+            queue_id=queue_id, username=username, is_admin=is_admin
         )
 
         if removed:
             logger.info(f"Queue item {queue_id} removed by {username}")
-            return JSONResponse(
-                {"success": True, "message": "Item removed from queue"}
-            )
+            return JSONResponse({"success": True, "message": "Item removed from queue"})
         else:
             return JSONResponse(
-                {"success": False, "message": "Item not found"},
-                status_code=404
+                {"success": False, "message": "Item not found"}, status_code=404
             )
 
     except PermissionError as e:
-        logger.warning(f"Permission denied for {username} to remove queue item {queue_id}")
+        logger.warning(
+            f"Permission denied for {username} to remove queue item {queue_id}"
+        )
         raise HTTPException(status_code=403, detail=str(e))
 
     except Exception as e:

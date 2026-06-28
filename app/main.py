@@ -26,9 +26,7 @@ from app.routes import auth, search, queue, admin
 logging.basicConfig(
     level=logging.INFO,  # Default level before settings are fully loaded
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 
 logger = logging.getLogger(__name__)
@@ -48,6 +46,13 @@ async def cleanup_old_queue_items():
         count = await queue_manager.cleanup_old_items(threshold)
         if count > 0:
             logger.info(f"Cleanup job removed {count} old queue items")
+
+        # Also reclaim disk: delete downloaded videos no longer referenced.
+        videos_removed = await queue_manager.cleanup_old_videos(threshold)
+        if videos_removed > 0:
+            logger.info(
+                f"Cleanup job removed {videos_removed} unreferenced video files"
+            )
     except Exception as e:
         logger.error(f"Error in cleanup job: {e}", exc_info=True)
 
@@ -77,6 +82,7 @@ async def lifespan(app: FastAPI):
 
     # Set event loop reference for chromecast service (for sync/async bridge)
     from app.services.chromecast import chromecast_service
+
     chromecast_service.set_event_loop(asyncio.get_running_loop())
 
     # Ensure data directories exist
@@ -88,7 +94,7 @@ async def lifespan(app: FastAPI):
     if ffmpeg_path:
         logger.info(f"ffmpeg found: {ffmpeg_path}")
     else:
-        logger.warning("⚠️  ffmpeg NOT FOUND! Video downloads will fail.")
+        logger.warning("ffmpeg NOT FOUND! Video downloads will fail.")
         logger.warning("   Install ffmpeg: https://ffmpeg.org/download.html")
         logger.warning("   macOS: brew install ffmpeg")
         logger.warning("   Ubuntu: apt-get install ffmpeg")
@@ -101,16 +107,20 @@ async def lifespan(app: FastAPI):
     if settings.is_docker():
         logger.info("Environment: Docker container detected")
         if settings.server_host:
-            logger.info(f"Server Host: {settings.server_host} (from SERVER_HOST env var)")
+            logger.info(
+                f"Server Host: {settings.server_host} (from SERVER_HOST env var)"
+            )
         else:
-            logger.error("❌ SERVER_HOST is NOT SET!")
+            logger.error("SERVER_HOST is NOT SET!")
             logger.error("   Chromecast will NOT be able to access videos!")
             logger.error("   Set SERVER_HOST to your Docker host's IP address")
             logger.error("   Example: SERVER_HOST=192.168.1.100")
     else:
         logger.info("Environment: Development (not Docker)")
         if settings.server_host:
-            logger.info(f"Server Host: {settings.server_host} (from SERVER_HOST env var)")
+            logger.info(
+                f"Server Host: {settings.server_host} (from SERVER_HOST env var)"
+            )
         else:
             detected_host = settings.get_local_ip()
             logger.info(f"Server Host: {detected_host} (auto-detected)")
@@ -129,7 +139,7 @@ async def lifespan(app: FastAPI):
             cleanup_old_queue_items,
             "interval",
             hours=settings.queue_cleanup_interval_hours,
-            id="cleanup_queue"
+            id="cleanup_queue",
         )
         scheduler.start()
         logger.info(
@@ -150,6 +160,11 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown()
         logger.info("Cleanup scheduler stopped")
 
+    # Stop playback and join the playout thread for a clean exit
+    from app.services.chromecast import chromecast_service
+
+    chromecast_service.shutdown()
+
     logger.info("Application shutdown complete")
 
 
@@ -158,7 +173,7 @@ app = FastAPI(
     title="Karaoke Jukebox",
     description="Mobile-first karaoke jukebox with Chromecast support",
     version="2.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 
@@ -173,22 +188,14 @@ app.include_router(admin.router)
 # Videos directory (for Chromecast playback)
 videos_path = settings.get_videos_dir()
 if videos_path.exists():
-    app.mount(
-        "/data/videos",
-        StaticFiles(directory=str(videos_path)),
-        name="videos"
-    )
+    app.mount("/data/videos", StaticFiles(directory=str(videos_path)), name="videos")
 else:
     logger.warning(f"Videos directory does not exist: {videos_path}")
 
 # Static assets (CSS, JS)
 static_path = Path("app/static")
 if static_path.exists():
-    app.mount(
-        "/static",
-        StaticFiles(directory=str(static_path)),
-        name="static"
-    )
+    app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
 
 # Root redirect (for convenience)
@@ -203,10 +210,12 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint for monitoring."""
+    from app.services.chromecast import chromecast_service
+
     return {
         "status": "healthy",
         "queue_size": await queue_manager.get_queue_size(),
-        "is_playing": False  # Could check chromecast_service.is_playing
+        "is_playing": chromecast_service.is_playing,
     }
 
 
@@ -218,5 +227,5 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=settings.server_port,
         reload=True,
-        log_level="info"
+        log_level="info",
     )

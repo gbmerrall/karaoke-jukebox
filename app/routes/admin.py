@@ -14,9 +14,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/admin",
-    tags=["Admin"],
-    dependencies=[Depends(require_admin)]
+    prefix="/admin", tags=["Admin"], dependencies=[Depends(require_admin)]
 )
 
 templates = Jinja2Templates(directory="app/templates")
@@ -43,7 +41,7 @@ async def admin_page(request: Request):
             "username": username,
             "is_admin": is_admin,
             "queue": queue,
-        }
+        },
     )
 
 
@@ -61,19 +59,19 @@ async def scan_devices(request: Request):
     try:
         devices = await chromecast_service.discover_devices(timeout=10)
 
-        return JSONResponse({
-            "success": True,
-            "devices": devices,
-            "count": len(devices)
-        })
+        return JSONResponse(
+            {"success": True, "devices": devices, "count": len(devices)}
+        )
 
     except Exception as e:
         logger.error(f"Device scan failed: {e}", exc_info=True)
-        return JSONResponse({
-            "success": False,
-            "error": "Failed to scan for devices. Please try again.",
-            "devices": []
-        })
+        return JSONResponse(
+            {
+                "success": False,
+                "error": "Failed to scan for devices. Please try again.",
+                "devices": [],
+            }
+        )
 
 
 @router.post("/devices/select")
@@ -90,15 +88,13 @@ async def select_device(request: Request, device_uuid: str = Form(...)):
     success = chromecast_service.select_device(device_uuid)
 
     if success:
-        return JSONResponse({
-            "success": True,
-            "message": "Device selected successfully"
-        })
+        return JSONResponse(
+            {"success": True, "message": "Device selected successfully"}
+        )
     else:
-        return JSONResponse({
-            "success": False,
-            "message": "Device not found"
-        }, status_code=404)
+        return JSONResponse(
+            {"success": False, "message": "Device not found"}, status_code=404
+        )
 
 
 @router.post("/playback/start")
@@ -116,10 +112,13 @@ async def start_playback(request: Request):
     # Check if queue has items
     queue_size = await queue_manager.get_queue_size()
     if queue_size == 0:
-        return JSONResponse({
-            "success": False,
-            "message": "Queue is empty. Add songs before starting playback."
-        }, status_code=400)
+        return JSONResponse(
+            {
+                "success": False,
+                "message": "Queue is empty. Add songs before starting playback.",
+            },
+            status_code=400,
+        )
 
     result = chromecast_service.start_playback()
 
@@ -165,12 +164,14 @@ async def get_status(request: Request):
     queue_size = await queue_manager.get_queue_size()
     currently_playing = await queue_manager.get_currently_playing()
 
-    return JSONResponse({
-        "is_playing": is_playing,
-        "selected_device_uuid": selected_device,
-        "queue_size": queue_size,
-        "currently_playing": currently_playing
-    })
+    return JSONResponse(
+        {
+            "is_playing": is_playing,
+            "selected_device_uuid": selected_device,
+            "queue_size": queue_size,
+            "currently_playing": currently_playing,
+        }
+    )
 
 
 @router.delete("/queue/{queue_id}")
@@ -186,27 +187,21 @@ async def admin_delete_queue_item(request: Request, queue_id: int):
 
     try:
         removed = await queue_manager.remove_from_queue(
-            queue_id=queue_id,
-            is_admin=True
+            queue_id=queue_id, is_admin=True
         )
 
         if removed:
-            return JSONResponse({
-                "success": True,
-                "message": "Item removed from queue"
-            })
+            return JSONResponse({"success": True, "message": "Item removed from queue"})
         else:
-            return JSONResponse({
-                "success": False,
-                "message": "Item not found"
-            }, status_code=404)
+            return JSONResponse(
+                {"success": False, "message": "Item not found"}, status_code=404
+            )
 
     except Exception as e:
         logger.error(f"Error removing queue item: {e}", exc_info=True)
-        return JSONResponse({
-            "success": False,
-            "message": "Failed to remove item"
-        }, status_code=500)
+        return JSONResponse(
+            {"success": False, "message": "Failed to remove item"}, status_code=500
+        )
 
 
 @router.post("/queue/clear")
@@ -218,23 +213,14 @@ async def clear_queue(request: Request):
     logger.info(f"Queue clear requested by {username}")
 
     try:
-        # Get all queue items and remove them
-        queue = await queue_manager.get_queue()
+        count = await queue_manager.clear_queue()
 
-        for item in queue:
-            await queue_manager.remove_from_queue(
-                queue_id=item["id"],
-                is_admin=True
-            )
-
-        return JSONResponse({
-            "success": True,
-            "message": f"Cleared {len(queue)} items from queue"
-        })
+        return JSONResponse(
+            {"success": True, "message": f"Cleared {count} items from queue"}
+        )
 
     except Exception as e:
         logger.error(f"Error clearing queue: {e}", exc_info=True)
-        return JSONResponse({
-            "success": False,
-            "message": "Failed to clear queue"
-        }, status_code=500)
+        return JSONResponse(
+            {"success": False, "message": "Failed to clear queue"}, status_code=500
+        )

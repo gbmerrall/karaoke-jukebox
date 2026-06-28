@@ -5,17 +5,24 @@ Handles CRUD operations for the queue and real-time updates to clients.
 
 import asyncio
 import json
-from datetime import datetime
-from typing import List, Dict, Optional, AsyncGenerator
-from app.database import get_db
-from app.config import settings
-from fastapi.templating import Jinja2Templates
 import logging
+import time
+from datetime import datetime, timezone
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
+from fastapi.templating import Jinja2Templates
+
+from app.config import settings
+from app.database import get_db
 
 logger = logging.getLogger(__name__)
 
 # Initialize templates
 templates = Jinja2Templates(directory="app/templates")
+
+# Cap each client's pending-event buffer. A client that stops reading (stalled
+# tab, dropped TCP) cannot grow memory without bound; once full it is dropped.
+SSE_QUEUE_MAXSIZE = 100
 
 
 class QueueManager:
@@ -34,7 +41,7 @@ class QueueManager:
         thumbnail_url: str,
         duration: int,
         views: int,
-        username: str
+        username: str,
     ) -> Dict:
         """
         Add a video to the queue.
@@ -65,7 +72,7 @@ class QueueManager:
             # Users can also re-queue a video after it's been played and removed
             cursor = await db.execute(
                 "SELECT id FROM queue WHERE video_id = ? AND username = ? AND status != 'completed'",
-                (video_id, username)
+                (video_id, username),
             )
             existing = await cursor.fetchone()
 
@@ -73,13 +80,13 @@ class QueueManager:
                 raise ValueError("You have already queued this video")
 
             # Add to queue
-            added_at = datetime.utcnow().isoformat()
+            added_at = datetime.now(timezone.utc).isoformat()
             cursor = await db.execute(
                 """
                 INSERT INTO queue (video_id, title, thumbnail_url, duration, views, username, added_at, status)
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued')
                 """,
-                (video_id, title, thumbnail_url, duration, views, username, added_at)
+                (video_id, title, thumbnail_url, duration, views, username, added_at),
             )
             await db.commit()
 
@@ -98,10 +105,12 @@ class QueueManager:
                 "views": views,
                 "username": username,
                 "added_at": added_at,
-                "status": "queued"
+                "status": "queued",
             }
 
-    async def remove_from_queue(self, queue_id: int, username: str = None, is_admin: bool = False) -> bool:
+    async def remove_from_queue(
+        self, queue_id: int, username: str = None, is_admin: bool = False
+    ) -> bool:
         """
         Remove a video from the queue.
 
@@ -120,8 +129,7 @@ class QueueManager:
             # Check ownership if not admin
             if not is_admin and username:
                 cursor = await db.execute(
-                    "SELECT username FROM queue WHERE id = ?",
-                    (queue_id,)
+                    "SELECT username FROM queue WHERE id = ?", (queue_id,)
                 )
                 row = await cursor.fetchone()
 
@@ -132,14 +140,13 @@ class QueueManager:
                     raise PermissionError("You can only remove your own queued songs")
 
             # Remove from queue
-            cursor = await db.execute(
-                "DELETE FROM queue WHERE id = ?",
-                (queue_id,)
-            )
+            cursor = await db.execute("DELETE FROM queue WHERE id = ?", (queue_id,))
             await db.commit()
 
             if cursor.rowcount > 0:
-                logger.info(f"Removed from queue: ID {queue_id} by {username or 'admin'}")
+                logger.info(
+                    f"Removed from queue: ID {queue_id} by {username or 'admin'}"
+                )
                 await self.broadcast_queue_update()
                 return True
 
@@ -201,8 +208,7 @@ class QueueManager:
         """
         async with get_db() as db:
             cursor = await db.execute(
-                "UPDATE queue SET status = ? WHERE id = ?",
-                (status, queue_id)
+                "UPDATE queue SET status = ? WHERE id = ?", (status, queue_id)
             )
             await db.commit()
 
@@ -229,16 +235,74 @@ class QueueManager:
                 DELETE FROM queue
                 WHERE datetime(added_at) < datetime('now', '-' || ? || ' hours')
                 """,
-                (hours_threshold,)
+                (hours_threshold,),
             )
             await db.commit()
             count = cursor.rowcount
 
             if count > 0:
-                logger.info(f"Cleaned up {count} old queue items (older than {hours_threshold} hours)")
+                logger.info(
+                    f"Cleaned up {count} old queue items (older than {hours_threshold} hours)"
+                )
                 await self.broadcast_queue_update()
 
             return count
+
+    async def clear_queue(self) -> int:
+        """Remove every item from the queue in a single statement.
+
+        Returns:
+            Number of items removed.
+        """
+        async with get_db() as db:
+            cursor = await db.execute("DELETE FROM queue")
+            await db.commit()
+            count = cursor.rowcount
+
+            if count > 0:
+                logger.info(f"Cleared {count} items from the queue")
+                await self.broadcast_queue_update()
+
+            return count
+
+    async def cleanup_old_videos(self, hours_threshold: int) -> int:
+        """Delete downloaded video files no longer referenced by the queue.
+
+        A file is removed only if (a) no queue row references its video_id and
+        (b) it was last modified more than `hours_threshold` hours ago. The age
+        check avoids deleting a video that was just downloaded but not yet
+        queued (e.g. an in-flight background download).
+
+        Args:
+            hours_threshold: Minimum file age in hours before deletion.
+
+        Returns:
+            Number of video files deleted.
+        """
+        videos_dir = settings.get_videos_dir()
+        if not videos_dir.exists():
+            return 0
+
+        async with get_db() as db:
+            cursor = await db.execute("SELECT DISTINCT video_id FROM queue")
+            rows = await cursor.fetchall()
+        referenced = {row["video_id"] for row in rows}
+
+        cutoff = time.time() - (hours_threshold * 3600)
+        deleted = 0
+        for video_file in videos_dir.glob("*.mp4"):
+            if video_file.stem in referenced:
+                continue
+            try:
+                if video_file.stat().st_mtime > cutoff:
+                    continue
+                video_file.unlink()
+                deleted += 1
+                logger.info(f"Deleted unreferenced video file: {video_file.name}")
+            except OSError as e:
+                logger.warning(f"Failed to delete {video_file.name}: {e}")
+
+        return deleted
 
     async def reset_orphaned_items(self) -> int:
         """
@@ -262,14 +326,18 @@ class QueueManager:
             count = cursor.rowcount
 
             if count > 0:
-                logger.info(f"Reset {count} orphaned queue item(s) from 'playing' to 'queued'")
+                logger.info(
+                    f"Reset {count} orphaned queue item(s) from 'playing' to 'queued'"
+                )
                 await self.broadcast_queue_update()
 
             return count
 
     # SSE Broadcasting
 
-    async def subscribe(self, username: str = None, is_admin: bool = False) -> AsyncGenerator[str, None]:
+    async def subscribe(
+        self, username: str = None, is_admin: bool = False
+    ) -> AsyncGenerator[str, None]:
         """
         Subscribe to queue updates via SSE.
 
@@ -284,12 +352,14 @@ class QueueManager:
             async for event in queue_manager.subscribe(username, is_admin):
                 # Send event to client
         """
-        # Create a queue for this connection
-        conn_queue = asyncio.Queue()
+        # Create a bounded queue for this connection (see SSE_QUEUE_MAXSIZE).
+        conn_queue = asyncio.Queue(maxsize=SSE_QUEUE_MAXSIZE)
         # Store connection with user context
         conn_data = {"queue": conn_queue, "username": username, "is_admin": is_admin}
         self._connections.append(conn_data)
-        logger.info(f"SSE client connected ({username}). Total connections: {len(self._connections)}")
+        logger.info(
+            f"SSE client connected ({username}). Total connections: {len(self._connections)}"
+        )
 
         try:
             # Send initial queue state (rendered as HTML)
@@ -311,7 +381,9 @@ class QueueManager:
             logger.info("SSE client connection cancelled")
         finally:
             self._connections.remove(conn_data)
-            logger.info(f"SSE client disconnected ({username}). Total connections: {len(self._connections)}")
+            logger.info(
+                f"SSE client disconnected ({username}). Total connections: {len(self._connections)}"
+            )
 
     async def broadcast_queue_update(self) -> None:
         """Broadcast the current queue state to all connected SSE clients."""
@@ -326,9 +398,7 @@ class QueueManager:
             try:
                 # Render HTML for this specific client
                 html = self._render_queue_html(
-                    queue_data,
-                    conn_data["username"],
-                    conn_data["is_admin"]
+                    queue_data, conn_data["username"], conn_data["is_admin"]
                 )
                 event = self._format_sse_event("queue-update", html, is_html=True)
                 conn_data["queue"].put_nowait(event)
@@ -343,7 +413,9 @@ class QueueManager:
             except ValueError:
                 pass
 
-    def _render_queue_html(self, queue: List[Dict], username: str = None, is_admin: bool = False) -> str:
+    def _render_queue_html(
+        self, queue: List[Dict], username: str = None, is_admin: bool = False
+    ) -> str:
         """
         Render the queue HTML template.
 
@@ -357,25 +429,35 @@ class QueueManager:
         """
         # Create a fake request object for template rendering
         from starlette.datastructures import Headers
-        fake_request = type('obj', (object,), {
-            'headers': Headers({}),
-            'url': type('obj', (object,), {'path': '/'})()
-        })()
+
+        fake_request = type(
+            "obj",
+            (object,),
+            {"headers": Headers({}), "url": type("obj", (object,), {"path": "/"})()},
+        )()
 
         # Use admin template for admin users, regular template for others
-        template_name = "partials/admin_queue.html" if is_admin else "partials/queue.html"
+        template_name = (
+            "partials/admin_queue.html" if is_admin else "partials/queue.html"
+        )
 
-        html = templates.get_template(template_name).render({
-            "request": fake_request,
-            "queue": queue,
-            "username": username,
-            "is_admin": is_admin
-        })
+        html = templates.get_template(template_name).render(
+            {
+                "request": fake_request,
+                "queue": queue,
+                "username": username,
+                "is_admin": is_admin,
+            }
+        )
 
-        logger.debug(f"Rendered queue HTML for {username} (admin={is_admin}): {len(html)} chars, {len(queue)} items")
+        logger.debug(
+            f"Rendered queue HTML for {username} (admin={is_admin}): {len(html)} chars, {len(queue)} items"
+        )
         return html
 
-    def _format_sse_event(self, event_type: str, data: any, is_html: bool = False) -> str:
+    def _format_sse_event(
+        self, event_type: str, data: Any, is_html: bool = False
+    ) -> str:
         """
         Format data as an SSE event.
 
@@ -389,8 +471,8 @@ class QueueManager:
         """
         if is_html:
             # For multiline HTML, each line must be prefixed with "data: "
-            lines = data.split('\n')
-            data_lines = '\n'.join(f'data: {line}' for line in lines)
+            lines = data.split("\n")
+            data_lines = "\n".join(f"data: {line}" for line in lines)
             return f"event: {event_type}\n{data_lines}\n\n"
         else:
             # For other data, JSON-encode
