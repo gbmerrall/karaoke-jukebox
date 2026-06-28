@@ -87,6 +87,10 @@ Open your browser to: **http://localhost:8000**
 docker build -t karaoke-jukebox .
 ```
 
+The image installs Python dependencies from `requirements.txt`, which is a
+generated artifact exported from `uv.lock` (see "Keeping downloads working"
+below). uv itself is not required to build or run the image.
+
 ### Run the Container
 
 ```bash
@@ -117,7 +121,7 @@ docker run -d \
 4. **Data Persistence**: Database and videos are ephemeral (lost on container restart)
    - To persist data, add: `-v /path/to/data:/app/data`
 
-5. Using DOCKER_BUILDKIT for caching of apt data to speed up rebuilds. Ensire you set DOCKER_BUILDKIT=1 before building
+5. Using DOCKER_BUILDKIT for caching of apt data to speed up rebuilds. Ensure you set DOCKER_BUILDKIT=1 before building
 
 ### Docker Compose
 
@@ -175,6 +179,15 @@ The app uses:
 - **yt-dlp** - Video downloads
 - **pychromecast** - Chromecast control
 
+### Testing and linting
+
+```bash
+make test     # fast unit suite (uv run pytest); the live yt-dlp canary is skipped
+make lint     # uv run ruff check . + ruff format --check .
+```
+
+See `DEVELOPMENT.md` for the full contributor workflow.
+
 ## Troubleshooting
 
 ### Can't find Chromecast
@@ -185,8 +198,8 @@ The app uses:
 ### Videos won't download
 - **Check if ffmpeg is installed**: Run `ffmpeg -version` in terminal
   - If not installed, see Requirements section above
-- **yt-dlp now requires a Javascript engine ideally deno**
-  - This is already taken care of in Dockerfile
+- **yt-dlp requires a JavaScript engine (deno) for its challenge solver**
+  - This is already taken care of in the Dockerfile
 - Verify your `YOUTUBE_API_KEY` is valid
 - Check `data/videos/` directory permissions
 - Look at server logs for specific errors
