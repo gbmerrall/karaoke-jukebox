@@ -7,10 +7,8 @@ name = "pypi"
 pychromecast = "*"
 apscheduler = "*"
 google-api-python-client = "*"
-httpx = "*"
 pydantic-settings = "*"
 fastapi = "*"
-yt-dlp = {extras = ["default"], version = "*"}
 aiosqlite = "*"
 uvicorn = {extras = ["standard"], version = "*"}
 gunicorn = "*"
@@ -18,9 +16,12 @@ jinja2 = "*"
 python-multipart = "*"
 itsdangerous = "*"
 isodate = "*"
+yt-dlp = "*"
 
 [dev-packages]
 ruff = "*"
+pytest = "*"
+pytest-asyncio = "*"
 
 [requires]
 python_version = "3.13"

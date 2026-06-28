@@ -1,0 +1,8 @@
+[tool.pytest.ini_options]
+# asyncio_mode = "auto" lets us write `async def test_...` without decorating
+# every test with @pytest.mark.asyncio.
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: tests that hit the live network (yt-dlp / YouTube). Opt-in via --run-integration.",
+]
