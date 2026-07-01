@@ -1,6 +1,21 @@
 # Karaoke Jukebox
 
-Mobile-first karaoke jukebox web app with Chromecast support.
+Mobile-first karaoke jukebox web app with Chromecast support. We used to have a karaoke machine but no matter how many songs
+are loaded on, it never has the songs you want. One day, I wen to a bar in Singapore that queued up karaoke songs using YouTube, 
+ads and all! So we started using YouTube at home but people keep mashing the wrong buttons and killing queues or playing their song.
+So I built this. 
+
+It deliberately uses Chromecasts for playout over the local network. That's what I've got at home so that's what I use. 
+Makes it easy to get videos to the TV. 
+
+## Feautures
+* Mobile first 
+* Super simple for users to start. Just enter your name and search/queue
+* Uses the YouTube API to search for songs
+* Users can only manage their own songs in the queue
+* Simple admin login for managing the queue and playback
+* Chromecast playout including searching for devices
+* Auto queue advance
 
 ## Quick Start
 
