@@ -43,7 +43,7 @@ ENV PYTHONUNBUFFERED=1 \
 # - YOUTUBE_API_KEY: YouTube Data API v3 key (required)
 # - SECRET_KEY: Session signing key - generate with: python -c "import secrets; print(secrets.token_hex(32))"
 # - SERVER_HOST: Docker host IP address (REQUIRED for Chromecast, e.g., 192.168.1.100)
-# - SERVER_PORT: External port for Chromecast access (default: 8000)
+# - SERVER_PORT: External port for Chromecast access (default: 5051)
 # - DATA_DIR: Data directory path (default: /app/data)
 # - LOG_LEVEL: Logging level (default: INFO)
 
@@ -88,24 +88,24 @@ RUN useradd --create-home --uid 10001 jukebox && \
     chmod -R 755 /app/data
 
 # Expose port
-EXPOSE 8000
+EXPOSE 5051
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:5051/health || exit 1
 
 # Drop privileges before running the server
 USER jukebox
 
 # Run with gunicorn using uvicorn workers
-# - bind to 0.0.0.0:8000 to accept external connections
+# - bind to 0.0.0.0:5051 to accept external connections
 # - 1 worker (Chromecast playback state lives in-process; do not scale blindly)
 # - uvicorn worker class for async support
 # - timeout 120s for long-running operations (video downloads)
 # - access log to stdout
 CMD ["gunicorn", \
      "app.main:app", \
-     "--bind", "0.0.0.0:8000", \
+     "--bind", "0.0.0.0:5051", \
      "--workers", "1", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
      "--timeout", "120", \

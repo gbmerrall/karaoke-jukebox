@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   jukebox:
@@ -31,7 +31,7 @@ services:
       - SERVER_HOST=${SERVER_HOST:?SERVER_HOST must be set in .env}
 
       # Optional: Adjust if needed
-      - SERVER_PORT=8000
+      - SERVER_PORT=5051
       - DATA_DIR=/app/data
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
 
