@@ -136,24 +136,30 @@ async def test_download_known_good_video_produces_playable_mp4(isolated_videos_d
     )
 
 
-@pytest.mark.integration
 async def test_download_is_idempotent_when_already_present(isolated_videos_dir):
-    """A second download of the same id short-circuits without re-fetching.
+    """download() short-circuits when the clip is already on disk.
 
     Guards the is_downloaded() fast path in download() so the app does not
-    re-hit YouTube for a clip it already has on disk.
+    re-hit YouTube for a clip it already has. This is pure filesystem logic:
+    is_downloaded() only checks that the target file exists and is non-empty,
+    so the precondition is established by writing a dummy file rather than doing
+    a real (redundant) YouTube fetch. The live yt-dlp/YouTube extraction is
+    covered by test_download_known_good_video_produces_playable_mp4; repeating a
+    real download here would add no extraction coverage and only double the
+    rate-limit exposure that makes the suite flaky in CI.
     """
-    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
-        pytest.skip("ffmpeg/ffprobe not installed (required for downloads)")
-    if not has_internet():
-        pytest.skip("no internet connectivity to YouTube")
-
     service = VideoDownloadService()
 
-    first = await service.download(KNOWN_GOOD_VIDEO_ID, title="canary clip")
-    assert first["success"] is True
+    # Establish the "already downloaded" precondition without touching the
+    # network: is_downloaded() is satisfied by any non-empty file at the path.
+    video_path = settings.get_video_path(KNOWN_GOOD_VIDEO_ID)
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+    video_path.write_bytes(b"not a real mp4, just enough to look present")
+    assert service.is_downloaded(KNOWN_GOOD_VIDEO_ID) is True
 
-    # Second call must not re-download; it returns the cached-file message.
-    second = await service.download(KNOWN_GOOD_VIDEO_ID, title="canary clip")
-    assert second["success"] is True
-    assert second["message"] == "Video already downloaded"
+    # download() must see the existing file and return the cached-file result
+    # instead of invoking yt-dlp.
+    result = await service.download(KNOWN_GOOD_VIDEO_ID, title="canary clip")
+    assert result["success"] is True
+    assert result["message"] == "Video already downloaded"
+    assert result["video_path"] == str(video_path)
