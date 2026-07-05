@@ -86,6 +86,10 @@ class PlayoutService:
         """
         if not self.player.supports_discovery:
             return []
+        # keep_connection is a snapshot of is_playing, not a live re-check. Safe
+        # because all routes that mutate is_playing run on this same event loop
+        # and there is no await between this read and the backend's disconnect
+        # decision; do not introduce one without moving the check into the backend.
         return await self.player.discover_devices(
             timeout=timeout, keep_connection=self.is_playing
         )

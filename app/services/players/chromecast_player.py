@@ -72,9 +72,11 @@ class ChromecastPlayer:
         self._cast: Optional[pychromecast.Chromecast] = None
         # Guards selected_device_uuid and _cast, which are read/written from both
         # the request thread (select_device, discover_devices) and the playout
-        # thread (connect, play, cleanup). Never hold this lock across blocking
-        # calls (network I/O, sleeps, the play/monitor loop) - only around the
-        # brief reference read/write itself.
+        # thread (connect, play, cleanup). Hold it only around the brief reference
+        # read/write itself - never across blocking calls (network I/O, sleeps,
+        # the play/monitor loop) - with ONE sanctioned exception: discover_devices
+        # holds it across its disconnect-idle-connection block, matching the
+        # pre-refactor behavior (that block ran under playout_lock).
         self._lock = threading.Lock()
 
     async def discover_devices(
