@@ -52,6 +52,8 @@ requirements.txt
 # Project specific
 cursor-memory-bank/
 project-memory-bank/
+# Subagent-driven-development scratch (ledger, task briefs, reports, review diffs)
+.superpowers/
 .ruff_cache/
 .flake8
 node_modules/
