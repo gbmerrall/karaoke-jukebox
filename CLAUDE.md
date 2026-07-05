@@ -38,6 +38,20 @@ uv sync
 ./setup.sh
 ```
 
+### Git Worktrees
+
+Each worktree has its own `.venv` (not shared with the main checkout). Run `uv sync`
+inside a new worktree before relying on any diagnostics or type checking there.
+
+This repo uses `ty` as the authoritative type checker (see Python Coding Guidelines).
+Claude Code's `pyright-lsp` plugin also runs in the background for inline diagnostics,
+but there is no `pyrightconfig.json`/`[tool.pyright]` in this repo, so Pyright falls
+back to auto-detecting a `.venv` folder. In a freshly created worktree that hasn't been
+`uv sync`'d yet, that `.venv` exists but is empty, which makes Pyright report every
+third-party import (fastapi, pychromecast, etc.) as unresolved. Treat those
+import-resolution errors as noise from an unsynced worktree, not real bugs — don't
+chase them by editing Pyright config; run `uv sync` and/or defer to `ty` instead.
+
 **Required environment variables** (in `.env` at the repository root):
 - `ADMIN_PASSWORD` - Admin login password
 - `YOUTUBE_API_KEY` - YouTube Data API v3 key
