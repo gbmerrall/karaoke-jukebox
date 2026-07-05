@@ -59,6 +59,54 @@ def test_satisfies_player_protocol():
     assert player.supports_discovery is True
 
 
+class _CountingLock:
+    """A context-manager that records how many times it was entered/exited.
+
+    Used to prove the real threading.Lock in ChromecastPlayer is actually
+    acquired during device-state access, not merely present as an attribute.
+    """
+
+    def __init__(self):
+        self.enter_count = 0
+        self.exit_count = 0
+
+    def __enter__(self):
+        self.enter_count += 1
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.exit_count += 1
+        return False
+
+
+# ---------------------------------------------------------------------------
+# lock usage
+# ---------------------------------------------------------------------------
+
+
+def test_device_state_lock_is_exercised():
+    """The shared lock is actually entered/exited around device-state access
+    in select_device(), play()'s cast capture, and cleanup() - not merely
+    present as an unused attribute.
+    """
+    cast = _make_fake_cast()
+    player = _connected_player(cast)
+    counting_lock = _CountingLock()
+    player._lock = counting_lock
+
+    assert player.select_device("abc-123") is True
+    assert counting_lock.enter_count == 1
+    assert counting_lock.exit_count == 1
+
+    _play(player)
+    assert counting_lock.enter_count == 2
+    assert counting_lock.exit_count == 2
+
+    player.cleanup()
+    assert counting_lock.enter_count == 3
+    assert counting_lock.exit_count == 3
+
+
 # ---------------------------------------------------------------------------
 # select_device
 # ---------------------------------------------------------------------------

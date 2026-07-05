@@ -70,6 +70,12 @@ class ChromecastPlayer:
         self.discovered_devices: List[Dict] = []
         self.selected_device_uuid: Optional[str] = None
         self._cast: Optional[pychromecast.Chromecast] = None
+        # Guards selected_device_uuid and _cast, which are read/written from both
+        # the request thread (select_device, discover_devices) and the playout
+        # thread (connect, play, cleanup). Never hold this lock across blocking
+        # calls (network I/O, sleeps, the play/monitor loop) - only around the
+        # brief reference read/write itself.
+        self._lock = threading.Lock()
 
     async def discover_devices(
         self, timeout: int = 10, keep_connection: bool = False
@@ -84,23 +90,26 @@ class ChromecastPlayer:
         Returns:
             List of {"name": str, "uuid": str} dicts.
         """
-        if keep_connection:
-            if self._cast:
-                logger.warning(
-                    "Scan requested during playback - keeping active connection"
-                )
-        elif self._cast:
-            # Disconnect an existing idle connection before scanning; a stale
-            # connection conflicts with AsyncZeroconf.
-            logger.info(f"Disconnecting existing Chromecast: {self._cast.name}")
-            try:
-                if not self._cast.is_idle:
-                    self._cast.quit_app()
-                self._cast.disconnect()
-                logger.info("Existing Chromecast disconnected")
-            except Exception as e:
-                logger.warning(f"Error disconnecting existing Chromecast: {e}")
-            self._cast = None
+        with self._lock:
+            if keep_connection:
+                if self._cast:
+                    logger.warning(
+                        "Scan requested during playback - keeping active connection"
+                    )
+            elif self._cast:
+                # Disconnect an existing idle connection before scanning; a stale
+                # connection conflicts with AsyncZeroconf. Held across this block
+                # (matching the pre-refactor behavior) since it's a bounded,
+                # request-thread-only disconnect, not the playout loop.
+                logger.info(f"Disconnecting existing Chromecast: {self._cast.name}")
+                try:
+                    if not self._cast.is_idle:
+                        self._cast.quit_app()
+                    self._cast.disconnect()
+                    logger.info("Existing Chromecast disconnected")
+                except Exception as e:
+                    logger.warning(f"Error disconnecting existing Chromecast: {e}")
+                self._cast = None
 
         logger.info("Scanning for Chromecast devices...")
         try:
@@ -139,7 +148,8 @@ class ChromecastPlayer:
         device_exists = any(d["uuid"] == device_uuid for d in self.discovered_devices)
 
         if device_exists or device_uuid:  # Allow setting even if not in cache
-            self.selected_device_uuid = device_uuid
+            with self._lock:
+                self.selected_device_uuid = device_uuid
             logger.info(f"Selected Chromecast device: {device_uuid}")
             return True
 
@@ -152,16 +162,20 @@ class ChromecastPlayer:
         Returns:
             True when connected; False if no device is selected or unreachable.
         """
-        if not self.selected_device_uuid:
+        with self._lock:
+            device_uuid = self.selected_device_uuid
+
+        if not device_uuid:
             logger.error("No Chromecast device selected")
             return False
 
-        logger.info(f"Connecting to Chromecast: {self.selected_device_uuid}")
-        cast = self._connect_to_device(self.selected_device_uuid)
+        logger.info(f"Connecting to Chromecast: {device_uuid}")
+        cast = self._connect_to_device(device_uuid)
         if not cast:
             return False
 
-        self._cast = cast
+        with self._lock:
+            self._cast = cast
         logger.info(f"Connected to Chromecast: {cast.name}")
         return True
 
@@ -181,7 +195,8 @@ class ChromecastPlayer:
         Returns:
             The PlaybackOutcome. All exceptions are caught and become FAILED.
         """
-        cast = self._cast
+        with self._lock:
+            cast = self._cast
         if cast is None:
             logger.error("play() called with no connected Chromecast")
             return PlaybackOutcome.FAILED
@@ -267,8 +282,9 @@ class ChromecastPlayer:
 
     def cleanup(self) -> None:
         """Quit the cast app and disconnect. Safe to call when not connected."""
-        cast = self._cast
-        self._cast = None
+        with self._lock:
+            cast = self._cast
+            self._cast = None
         if not cast:
             return
         try:
