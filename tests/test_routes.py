@@ -520,7 +520,7 @@ def _admin_mocks(monkeypatch):
     """Replace admin singletons with mocks and return them.
 
     Returns:
-        Tuple of (chromecast_service mock, queue_manager mock).
+        Tuple of (playout_service mock, queue_manager mock).
     """
     cc = MagicMock()
     cc.discover_devices = AsyncMock(return_value=[])
@@ -538,7 +538,7 @@ def _admin_mocks(monkeypatch):
     qm.remove_from_queue = AsyncMock(return_value=True)
     qm.clear_queue = AsyncMock(return_value=3)
 
-    monkeypatch.setattr(admin_module, "chromecast_service", cc)
+    monkeypatch.setattr(admin_module, "playout_service", cc)
     monkeypatch.setattr(admin_module, "queue_manager", qm)
     return cc, qm
 

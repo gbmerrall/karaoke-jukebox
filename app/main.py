@@ -80,10 +80,10 @@ async def lifespan(app: FastAPI):
     if reset_count > 0:
         logger.info(f"Reset {reset_count} orphaned queue item(s)")
 
-    # Set event loop reference for chromecast service (for sync/async bridge)
-    from app.services.chromecast import chromecast_service
+    # Set event loop reference for the playout service (for sync/async bridge)
+    from app.services.playout import playout_service
 
-    chromecast_service.set_event_loop(asyncio.get_running_loop())
+    playout_service.set_event_loop(asyncio.get_running_loop())
 
     # Ensure data directories exist
     settings.get_videos_dir().mkdir(parents=True, exist_ok=True)
@@ -161,9 +161,9 @@ async def lifespan(app: FastAPI):
         logger.info("Cleanup scheduler stopped")
 
     # Stop playback and join the playout thread for a clean exit
-    from app.services.chromecast import chromecast_service
+    from app.services.playout import playout_service
 
-    chromecast_service.shutdown()
+    playout_service.shutdown()
 
     logger.info("Application shutdown complete")
 
@@ -210,12 +210,12 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint for monitoring."""
-    from app.services.chromecast import chromecast_service
+    from app.services.playout import playout_service
 
     return {
         "status": "healthy",
         "queue_size": await queue_manager.get_queue_size(),
-        "is_playing": chromecast_service.is_playing,
+        "is_playing": playout_service.is_playing,
     }
 
 

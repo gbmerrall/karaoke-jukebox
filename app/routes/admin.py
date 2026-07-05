@@ -1,5 +1,5 @@
 """
-Admin routes for Chromecast control and queue management.
+Admin routes for playback control and queue management.
 All routes require admin authentication.
 """
 
@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from app.routes.auth import require_admin
-from app.services.chromecast import chromecast_service
+from app.services.playout import playout_service
 from app.services.queue_manager import queue_manager
 import logging
 
@@ -57,7 +57,7 @@ async def scan_devices(request: Request):
     logger.info(f"Device scan initiated by {username}")
 
     try:
-        devices = await chromecast_service.discover_devices(timeout=10)
+        devices = await playout_service.discover_devices(timeout=10)
 
         return JSONResponse(
             {"success": True, "devices": devices, "count": len(devices)}
@@ -85,7 +85,7 @@ async def select_device(request: Request, device_uuid: str = Form(...)):
     username, _ = require_admin(request)
     logger.info(f"Device selection by {username}: {device_uuid}")
 
-    success = chromecast_service.select_device(device_uuid)
+    success = playout_service.select_device(device_uuid)
 
     if success:
         return JSONResponse(
@@ -120,7 +120,7 @@ async def start_playback(request: Request):
             status_code=400,
         )
 
-    result = chromecast_service.start_playback()
+    result = playout_service.start_playback()
 
     return JSONResponse(result)
 
@@ -133,7 +133,7 @@ async def stop_playback(request: Request):
     username, _ = require_admin(request)
     logger.info(f"Playback stop requested by {username}")
 
-    result = chromecast_service.stop_playback()
+    result = playout_service.stop_playback()
 
     return JSONResponse(result)
 
@@ -146,7 +146,7 @@ async def skip_current(request: Request):
     username, _ = require_admin(request)
     logger.info(f"Skip requested by {username}")
 
-    result = chromecast_service.skip_current()
+    result = playout_service.skip_current()
 
     return JSONResponse(result)
 
@@ -159,8 +159,8 @@ async def get_status(request: Request):
     Returns:
         JSON with playback state, selected device, and queue info
     """
-    is_playing = chromecast_service.is_playing
-    selected_device = chromecast_service.selected_device_uuid
+    is_playing = playout_service.is_playing
+    selected_device = playout_service.selected_device_uuid
     queue_size = await queue_manager.get_queue_size()
     currently_playing = await queue_manager.get_currently_playing()
 
