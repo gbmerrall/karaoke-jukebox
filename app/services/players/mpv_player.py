@@ -350,11 +350,17 @@ class MpvPlayer:
         docstring). play() decides what a recorded ending means.
 
         Args:
-            event: python-mpv event object (only as_dict() is used).
+            event: python-mpv event object (only as_dict() is used). Real
+                python-mpv nests the event-specific payload under an "event"
+                key (e.g. {"event": {"reason": ...}}); a flat {"reason": ...}
+                is accepted too as a defensive fallback across versions.
         """
         try:
             data = event.as_dict()
-            reason = _normalize_reason(data.get("reason"))
+            raw = data.get("reason")
+            if raw is None and isinstance(data.get("event"), dict):
+                raw = data["event"].get("reason")
+            reason = _normalize_reason(raw)
         except Exception:
             reason = "unknown"
         logger.debug(f"mpv end-file: {reason}")

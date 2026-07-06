@@ -71,8 +71,14 @@ class FakeMpvHandle:
         self.terminated = True
 
     def fire_end_file(self, reason):
-        """Deliver an end-file event to the backend (mpv event thread stand-in)."""
-        self.handlers["end-file"](_FakeEvent({"reason": reason}))
+        """Deliver an end-file event to the backend (mpv event thread stand-in).
+
+        Mirrors real python-mpv's as_dict() shape, which nests the
+        event-specific payload (including `reason`) under an "event" key.
+        """
+        self.handlers["end-file"](
+            _FakeEvent({"event_id": 7, "event": {"reason": reason}})
+        )
 
 
 class FakeMpvModule:
@@ -174,6 +180,22 @@ def test_eof_returns_finished(make_backend):
     thread.join(timeout=2)
     assert result["outcome"] is PlaybackOutcome.FINISHED
     assert handle.play_calls[0][1] == "no"  # loop_file 'no' for songs
+
+
+def test_eof_int_code_nested_under_event_returns_finished(make_backend):
+    """python-mpv 1.0.8 delivers the eof reason as int 0 nested under "event".
+
+    Regression test for a bug where _on_end_file read data["reason"] (always
+    None, since real python-mpv nests it under data["event"]["reason"]),
+    silently mapping every natural end-of-song to FAILED.
+    """
+    player, handle = make_backend()
+    _add_video()
+    thread, result, _, _ = _start_play(player)
+    assert player._load_confirmed.wait(2)
+    handle.handlers["end-file"](_FakeEvent({"event": {"reason": 0}}))
+    thread.join(timeout=2)
+    assert result["outcome"] is PlaybackOutcome.FINISHED
 
 
 def test_skip_returns_skipped_and_clears_event(make_backend):
