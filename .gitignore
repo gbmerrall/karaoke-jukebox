@@ -54,6 +54,8 @@ cursor-memory-bank/
 project-memory-bank/
 # Subagent-driven-development scratch (ledger, task briefs, reports, review diffs)
 .superpowers/
+# Claude Code worktrees (isolated workspaces, never tracked)
+.claude/worktrees/
 .ruff_cache/
 .flake8
 node_modules/
