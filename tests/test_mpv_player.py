@@ -106,7 +106,8 @@ def make_backend(tmp_path, monkeypatch):
 
     Points settings.data_dir at tmp_path, shrinks POLL_INTERVAL, and calls
     startup(). Returns (player, handle); handle is None when init failed.
-    Keyword args: idle='ok'|'missing'|None, init_error=<exception>.
+    Keyword args: idle='ok'|'missing'|'in-videos-dir'|None,
+    init_error=<exception>.
     """
     created = []
     monkeypatch.setattr(settings, "data_dir", tmp_path)
@@ -120,6 +121,10 @@ def make_backend(tmp_path, monkeypatch):
             monkeypatch.setattr(settings, "idle_video_path", idle_file)
         elif idle == "missing":
             monkeypatch.setattr(settings, "idle_video_path", tmp_path / "missing.mp4")
+        elif idle == "in-videos-dir":
+            idle_file = settings.get_videos_dir() / "idle.mp4"
+            idle_file.write_bytes(b"fake idle video")
+            monkeypatch.setattr(settings, "idle_video_path", idle_file)
         else:
             monkeypatch.setattr(settings, "idle_video_path", None)
         module = FakeMpvModule(init_error=init_error)
@@ -334,6 +339,21 @@ def test_no_idle_timer_when_file_missing(make_backend):
     """A configured but missing idle file disables the screensaver."""
     player, _ = make_backend(idle="missing")
     assert player._idle_timer is None
+
+
+def test_idle_video_inside_videos_dir_warns_but_works(make_backend, caplog):
+    """An idle video in data/videos/ gets a loud warning at startup.
+
+    The cleanup job deletes unreferenced .mp4 files from data/videos/, so the
+    screensaver would silently vanish hours later. The screensaver still runs
+    (cleanup may be disabled), but the admin is told at boot, not at midnight.
+    """
+    with caplog.at_level("WARNING", logger="app.services.players.mpv_player"):
+        player, _ = make_backend(idle="in-videos-dir")
+    assert player._idle_timer is not None  # still enabled
+    assert any(
+        "cleanup job" in record.message for record in caplog.records
+    ), "expected a startup warning about data/videos/ and the cleanup job"
 
 
 def test_play_cancels_idle_timer_and_rearms_after(make_backend):

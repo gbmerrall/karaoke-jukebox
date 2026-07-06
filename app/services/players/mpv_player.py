@@ -399,6 +399,15 @@ class MpvPlayer:
         if not path.exists():
             logger.warning(f"Idle video not found: {path} - screensaver disabled")
             return None
+        if path.resolve().is_relative_to(settings.get_videos_dir().resolve()):
+            # Still usable (cleanup may be disabled), but warn at boot rather
+            # than letting the screensaver silently vanish hours later.
+            logger.warning(
+                f"Idle video {path} is inside {settings.get_videos_dir()} - the "
+                "cleanup job deletes unreferenced .mp4 files there, so the "
+                "screensaver may disappear after a few hours. Move it to the "
+                "data/ root (e.g. data/idle.mp4)."
+            )
         logger.info(f"Idle screensaver video: {path}")
         return path
 
