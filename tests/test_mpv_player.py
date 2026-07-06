@@ -1,0 +1,412 @@
+"""Tests for MpvPlayer: outcome mapping, load-phase race, and idle screensaver.
+
+No libmpv, no display. A FakeMpvModule/FakeMpvHandle pair stands in for
+python-mpv: the handle records play/command calls and lets tests fire end-file
+events on demand (simulating mpv's event thread). POLL_INTERVAL is shrunk so
+the blocking play() loops spin fast; play() runs on a worker thread and tests
+drive it via the fake handle.
+"""
+
+# standard library
+import threading
+import time
+
+# 3rd party
+import pytest
+
+# project imports
+import app.services.players.mpv_player as mpv_player
+from app.config import settings
+from app.services.players import PlaybackOutcome, Player
+from app.services.players.mpv_player import MpvPlayer, _normalize_reason
+
+
+class _FakeEvent:
+    """Minimal python-mpv event: only as_dict() is used by the backend."""
+
+    def __init__(self, data):
+        self._data = data
+
+    def as_dict(self):
+        return self._data
+
+
+class FakeMpvHandle:
+    """Stands in for an mpv.MPV instance.
+
+    play() records (path, loop_file-at-call) tuples; when auto_load is True it
+    also sets self.path (mpv's `path` property) so the backend's load phase
+    confirms immediately. fire_end_file() invokes the registered end-file
+    callback the way mpv's event thread would.
+    """
+
+    def __init__(self, **options):
+        self.options = options
+        self.path = None
+        self.loop_file = None
+        self.play_calls = []  # list of (path, loop_file at time of call)
+        self.commands = []
+        self.terminated = False
+        self.handlers = {}
+        self.auto_load = True
+
+    def event_callback(self, name):
+        def decorator(fn):
+            self.handlers[name] = fn
+            return fn
+
+        return decorator
+
+    def play(self, path):
+        self.play_calls.append((path, self.loop_file))
+        if self.auto_load:
+            self.path = path
+
+    def command(self, *args):
+        self.commands.append(args)
+        if args and args[0] == "stop":
+            self.path = None
+
+    def terminate(self):
+        self.terminated = True
+
+    def fire_end_file(self, reason):
+        """Deliver an end-file event to the backend (mpv event thread stand-in)."""
+        self.handlers["end-file"](_FakeEvent({"reason": reason}))
+
+
+class FakeMpvModule:
+    """Stands in for the `mpv` module: exposes MPV(**options)."""
+
+    def __init__(self, init_error=None):
+        self.init_error = init_error
+        self.created = []
+
+    def MPV(self, **options):
+        if self.init_error is not None:
+            raise self.init_error
+        handle = FakeMpvHandle(**options)
+        self.created.append(handle)
+        return handle
+
+
+@pytest.fixture
+def make_backend(tmp_path, monkeypatch):
+    """Factory building an MpvPlayer around a FakeMpvModule.
+
+    Points settings.data_dir at tmp_path, shrinks POLL_INTERVAL, and calls
+    startup(). Returns (player, handle); handle is None when init failed.
+    Keyword args: idle='ok'|'missing'|None, init_error=<exception>.
+    """
+    created = []
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    monkeypatch.setattr(mpv_player, "POLL_INTERVAL", 0.01)
+    settings.get_videos_dir().mkdir(parents=True, exist_ok=True)
+
+    def factory(idle="ok", init_error=None):
+        if idle == "ok":
+            idle_file = tmp_path / "idle.mp4"
+            idle_file.write_bytes(b"fake idle video")
+            monkeypatch.setattr(settings, "idle_video_path", idle_file)
+        elif idle == "missing":
+            monkeypatch.setattr(settings, "idle_video_path", tmp_path / "missing.mp4")
+        else:
+            monkeypatch.setattr(settings, "idle_video_path", None)
+        module = FakeMpvModule(init_error=init_error)
+        player = MpvPlayer(mpv_module=module)
+        player.startup()
+        created.append(player)
+        handle = module.created[0] if module.created else None
+        return player, handle
+
+    yield factory
+    for player in created:
+        player.shutdown()
+
+
+def _add_video(video_id="vid1"):
+    """Create a fake downloaded video file and return its path."""
+    path = settings.get_video_path(video_id)
+    path.write_bytes(b"fake mp4 bytes")
+    return path
+
+
+def _start_play(player, video_id="vid1"):
+    """Run play() on a worker thread.
+
+    Returns:
+        (thread, result_dict, skip_event, stop_event); result_dict['outcome']
+        holds the PlaybackOutcome once the thread finishes.
+    """
+    skip, stop = threading.Event(), threading.Event()
+    result = {}
+
+    def worker():
+        result["outcome"] = player.play(video_id, skip, stop)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    return thread, result, skip, stop
+
+
+def _wait_until(condition, timeout=2.0):
+    """Poll a condition to True within timeout (test helper)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(0.005)
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Outcome mapping
+# ---------------------------------------------------------------------------
+
+
+def test_eof_returns_finished(make_backend):
+    """A song that plays to its natural end maps to FINISHED."""
+    player, handle = make_backend()
+    _add_video()
+    thread, result, _, _ = _start_play(player)
+    assert player._load_confirmed.wait(2)
+    handle.fire_end_file(b"eof")
+    thread.join(timeout=2)
+    assert result["outcome"] is PlaybackOutcome.FINISHED
+    assert handle.play_calls[0][1] == "no"  # loop_file 'no' for songs
+
+
+def test_skip_returns_skipped_and_clears_event(make_backend):
+    """Skip stops mpv, clears the skip event, returns SKIPPED."""
+    player, handle = make_backend()
+    _add_video()
+    thread, result, skip, _ = _start_play(player)
+    assert player._load_confirmed.wait(2)
+    skip.set()
+    thread.join(timeout=2)
+    assert result["outcome"] is PlaybackOutcome.SKIPPED
+    assert not skip.is_set()
+    assert ("stop",) in handle.commands
+
+
+def test_stop_returns_stopped_and_keeps_event(make_backend):
+    """Stop stops mpv, returns STOPPED, and never clears the stop event."""
+    player, handle = make_backend()
+    _add_video()
+    thread, result, _, stop = _start_play(player)
+    assert player._load_confirmed.wait(2)
+    stop.set()
+    thread.join(timeout=2)
+    assert result["outcome"] is PlaybackOutcome.STOPPED
+    assert stop.is_set()
+    assert ("stop",) in handle.commands
+
+
+def test_error_reason_returns_failed(make_backend):
+    """An mpv error ending maps to FAILED (feeds the retry cap)."""
+    player, handle = make_backend()
+    _add_video()
+    thread, result, _, _ = _start_play(player)
+    assert player._load_confirmed.wait(2)
+    handle.fire_end_file(b"error")
+    thread.join(timeout=2)
+    assert result["outcome"] is PlaybackOutcome.FAILED
+
+
+def test_missing_file_fails_without_touching_screensaver(make_backend):
+    """A missing video FAILS immediately and leaves idle state untouched."""
+    player, handle = make_backend()
+    timer_before = player._idle_timer
+    outcome = player.play("no-such-video", threading.Event(), threading.Event())
+    assert outcome is PlaybackOutcome.FAILED
+    assert handle.play_calls == []  # mpv never asked to load anything
+    assert player._idle_timer is timer_before  # startup's timer untouched
+
+
+def test_duration_cap_returns_timed_out(make_backend, monkeypatch):
+    """A song exceeding MAX_SONG_DURATION is stopped and TIMED_OUT."""
+    monkeypatch.setattr(mpv_player, "MAX_SONG_DURATION", 0.05)
+    player, handle = make_backend()
+    _add_video()
+    thread, result, _, _ = _start_play(player)
+    thread.join(timeout=2)
+    assert result["outcome"] is PlaybackOutcome.TIMED_OUT
+    assert ("stop",) in handle.commands
+
+
+def test_load_timeout_returns_failed(make_backend, monkeypatch):
+    """mpv never confirming the load (corrupt/rejected file) maps to FAILED."""
+    monkeypatch.setattr(mpv_player, "LOAD_TIMEOUT", 0.05)
+    player, handle = make_backend()
+    handle.auto_load = False  # mpv never reports the file as loaded
+    _add_video()
+    outcome = player.play("vid1", threading.Event(), threading.Event())
+    assert outcome is PlaybackOutcome.FAILED
+    assert ("stop",) in handle.commands
+
+
+def test_play_when_unavailable_returns_failed(make_backend):
+    """play() with no handle (startup failed) returns FAILED."""
+    player, handle = make_backend(init_error=RuntimeError("no DRM device"))
+    assert handle is None
+    outcome = player.play("vid1", threading.Event(), threading.Event())
+    assert outcome is PlaybackOutcome.FAILED
+
+
+# ---------------------------------------------------------------------------
+# Load-phase race (the replaced idle file's end event must be discarded)
+# ---------------------------------------------------------------------------
+
+
+def test_stale_end_event_from_replaced_idle_is_discarded(make_backend):
+    """The idle file's end-file (fired during song load) must not end the song."""
+    player, handle = make_backend()
+    handle.auto_load = False  # we control exactly when the song 'loads'
+    _add_video()
+    thread, result, _, _ = _start_play(player)
+    assert _wait_until(lambda: handle.play_calls)  # backend asked mpv to load
+    handle.fire_end_file(b"stop")  # the replaced idle loop ending
+    handle.path = handle.play_calls[-1][0]  # now the song is loaded
+    assert player._load_confirmed.wait(2)
+    handle.fire_end_file(b"eof")  # the song's real ending
+    thread.join(timeout=2)
+    assert result["outcome"] is PlaybackOutcome.FINISHED
+
+
+def test_skip_honored_during_load_phase(make_backend):
+    """A skip that lands while the file is still loading is not lost."""
+    player, handle = make_backend()
+    handle.auto_load = False
+    _add_video()
+    thread, result, skip, _ = _start_play(player)
+    assert _wait_until(lambda: handle.play_calls)
+    skip.set()
+    thread.join(timeout=2)
+    assert result["outcome"] is PlaybackOutcome.SKIPPED
+    assert not skip.is_set()
+
+
+# ---------------------------------------------------------------------------
+# Idle screensaver scheduling
+# ---------------------------------------------------------------------------
+
+
+def test_startup_arms_idle_timer(make_backend):
+    """With a valid idle video, startup() arms the countdown."""
+    player, _ = make_backend()
+    assert player._idle_timer is not None
+
+
+def test_no_idle_timer_when_unset(make_backend):
+    """IDLE_VIDEO_PATH unset: screensaver disabled, no timer ever armed."""
+    player, _ = make_backend(idle=None)
+    assert player._idle_timer is None
+
+
+def test_no_idle_timer_when_file_missing(make_backend):
+    """A configured but missing idle file disables the screensaver."""
+    player, _ = make_backend(idle="missing")
+    assert player._idle_timer is None
+
+
+def test_play_cancels_idle_timer_and_rearms_after(make_backend):
+    """The countdown is cancelled while a song plays and re-armed afterwards."""
+    player, handle = make_backend()
+    _add_video()
+    thread, _, _, _ = _start_play(player)
+    assert player._load_confirmed.wait(2)
+    assert player._idle_timer is None  # cancelled for the duration of the song
+    handle.fire_end_file(b"eof")
+    thread.join(timeout=2)
+    assert player._idle_timer is not None  # re-armed on the way out
+
+
+def test_idle_timer_fires_and_starts_screensaver(make_backend, monkeypatch):
+    """When the countdown elapses, the idle video plays with loop_file=inf."""
+    monkeypatch.setattr(mpv_player, "IDLE_DELAY", 0.05)
+    player, handle = make_backend()
+    player._arm_idle_timer()  # re-arm with the shrunken delay
+    assert _wait_until(lambda: handle.play_calls)
+    idle_path, loop_at_call = handle.play_calls[-1]
+    assert idle_path == str(settings.idle_video_path)
+    assert loop_at_call == "inf"
+
+
+def test_idle_start_yields_to_starting_song(make_backend):
+    """A timer that fires just as a song starts must not steal the screen."""
+    player, handle = make_backend()
+    with player._state_lock:
+        player._song_in_progress = True
+    player._start_idle()
+    assert handle.play_calls == []
+
+
+def test_cleanup_stops_playback_keeps_handle_and_rearms(make_backend):
+    """End of a playout session: stop the file, keep mpv, restart the countdown."""
+    player, handle = make_backend()
+    player.cleanup()
+    assert ("stop",) in handle.commands
+    assert handle.terminated is False
+    assert player._idle_timer is not None
+
+
+def test_shutdown_cancels_timer_and_terminates(make_backend):
+    """App exit: countdown cancelled, handle terminated."""
+    player, handle = make_backend()
+    player.shutdown()
+    assert player._idle_timer is None
+    assert handle.terminated is True
+
+
+# ---------------------------------------------------------------------------
+# Availability and protocol conformance
+# ---------------------------------------------------------------------------
+
+
+def test_startup_failure_leaves_player_unavailable(make_backend):
+    """An mpv init failure is logged, not raised; connect() then refuses."""
+    player, handle = make_backend(init_error=RuntimeError("libmpv not found"))
+    assert handle is None
+    assert player.connect() is False
+
+
+def test_connect_true_after_successful_startup(make_backend):
+    """connect() is a cheap availability check once startup() succeeded."""
+    player, _ = make_backend()
+    assert player.connect() is True
+
+
+async def test_discovery_stubs(make_backend):
+    """mpv has no discoverable devices: stubs return empty/False."""
+    player, _ = make_backend()
+    assert player.supports_discovery is False
+    assert player.selected_device_uuid is None
+    assert await player.discover_devices() == []
+    assert player.select_device("anything") is False
+
+
+def test_satisfies_player_protocol():
+    """MpvPlayer structurally satisfies the Player protocol."""
+    assert isinstance(MpvPlayer(mpv_module=FakeMpvModule()), Player)
+
+
+# ---------------------------------------------------------------------------
+# end-file reason normalization
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (b"eof", "eof"),
+        ("eof", "eof"),
+        ("STOP", "stop"),
+        (b"error", "error"),
+        (0, "eof"),
+        (4, "error"),
+        (None, "none"),
+    ],
+)
+def test_normalize_reason_handles_all_forms(raw, expected):
+    """Reasons arrive as bytes, str, or int codes depending on versions."""
+    assert _normalize_reason(raw) == expected
