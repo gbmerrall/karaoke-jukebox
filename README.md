@@ -8,6 +8,9 @@ So I built this.
 It deliberately uses Chromecasts for playout over the local network. That's what I've got at home so that's what I use. 
 Makes it easy to get videos to the TV. 
 
+There is now also an **mpv playback backend** for portable setups (think Raspberry Pi
+plugged into a projector in a hall) - see [mpv playout](#mpv-playout-raspberry-pi--local-hdmi) below.
+
 ## Feautures
 * Mobile first 
 * Super simple for users to start. Just enter your name and search/queue
@@ -15,6 +18,8 @@ Makes it easy to get videos to the TV.
 * Users can only manage their own songs in the queue
 * Simple admin login for managing the queue and playback
 * Chromecast playout including searching for devices
+* mpv playout for local HDMI output (e.g. Raspberry Pi + projector), with an idle
+  "screensaver" video loop between songs
 * Auto queue advance
 
 ## Quick Start
@@ -92,7 +97,8 @@ Open your browser to: **http://localhost:8000**
 - **uv** - Python dependency management (install with `curl -LsSf https://astral.sh/uv/install.sh | sh` or `brew install uv`)
 - All dependencies in `pyproject.toml` (install with `uv sync` from the repository root; `uv.lock` pins exact versions)
 - **YouTube Data API v3 key**
-- **Chromecast device** on the same network (for playback)
+- **Chromecast device** on the same network (default playback), or a spare HDMI
+  output + `libmpv2` for the mpv backend (see mpv playout section)
 
 ## Docker Deployment
 
@@ -157,6 +163,75 @@ A `docker-compose.yml` file is included. Before running:
 
 **Note:** Database and videos are ephemeral by default. To persist data, uncomment the volumes section in `docker-compose.yml`
 
+## mpv playout (Raspberry Pi / local HDMI)
+
+**Status: merged and unit-tested; pending final acceptance on real Pi hardware.**
+The full test suite covers the backend against a fake mpv, and the mpv options
+below were validated on a Pi with a standalone prototype, but the end-to-end
+acceptance checklist (screensaver at boot, gapless queue advance, clean display
+release on shutdown) has not been signed off on the target hardware yet. Treat
+it as beta until then. Chromecast remains the default and is unaffected.
+
+The mpv backend plays downloaded videos straight out of the local filesystem to
+an HDMI output via libmpv/DRM - no desktop session, no X/Wayland. When nothing
+has played for 15 seconds (before playback starts, between-sets, after a stop),
+it loops an idle "screensaver" video so the projector never sits on a black
+screen.
+
+### Enabling it
+
+In `.env`:
+
+```bash
+# Switch the playback backend (default: chromecast)
+PLAYER_BACKEND=mpv
+
+# Optional: video file looped as the idle screensaver. Unset = disabled
+# (black screen when idle).
+IDLE_VIDEO_PATH=./data/idle.mp4
+```
+
+On the Pi (or any Linux box with a free DRM output):
+
+```bash
+sudo apt install libmpv2      # the libmpv system library
+uv sync --extra mpv           # installs python-mpv (kept out of default installs)
+```
+
+python-mpv is an optional dependency (`mpv` extra) and is imported lazily - the
+Chromecast/Docker paths never need libmpv installed. Do NOT use Debian's
+apt-packaged `python3-mpv` (it is the old 0.x API); the extra pins
+`python-mpv>=1.0`.
+
+### Output configuration
+
+The video-output options are currently hardcoded constants in
+`app/services/players/mpv_player.py` (`MPV_OPTIONS`): DRM output on
+`/dev/dri/card1`, connector `HDMI-A-2`, 1280x720, `v4l2m2m` hardware decoding.
+If your hardware differs, edit those constants. Making them admin-configurable
+(video out, audio device, scaling) is the planned next phase.
+
+### Testing
+
+```bash
+# The mpv backend's unit tests run everywhere - no libmpv, no display needed
+uv run pytest tests/test_mpv_player.py -v
+
+# Whole suite (backend selection, playout policy, config validation)
+make test
+```
+
+Manual acceptance on the Pi (the remaining gate) is the checklist in
+`docs/superpowers/plans/2026-07-07-mpv-player-backend.md` (Task 5): screensaver
+within ~15s of boot, songs replace it, no screensaver flash between queued
+songs, skip/stop behave, screensaver returns ~15s after stop, clean exit
+releases the display.
+
+Notes for admins: with mpv there are no devices to scan or select - just start
+playback. If mpv fails to initialize (missing libmpv, DRM device busy), the app
+stays up and logs the reason; playback start will then report a connection
+failure in the logs rather than crashing the server.
+
 ## Keeping downloads working (yt-dlp)
 
 `yt-dlp` is the most fragile part of this app. YouTube periodically changes how
@@ -196,6 +271,7 @@ The app uses:
 - **Server-Sent Events (SSE)** - Real-time queue updates
 - **yt-dlp** - Video downloads
 - **pychromecast** - Chromecast control
+- **python-mpv** (optional `mpv` extra) - local HDMI playout via libmpv/DRM
 
 ### Testing and linting
 
@@ -212,6 +288,16 @@ See `DEVELOPMENT.md` for the full contributor workflow.
 - Ensure your Chromecast and server are on the same network
 - Check firewall settings
 - Try the "Scan for Devices" button in admin controls
+
+### mpv backend won't play / black screen
+- Check the logs for `mpv initialization failed` - the usual causes are a
+  missing `libmpv2` package, the DRM device path or HDMI connector in
+  `MPV_OPTIONS` not matching your hardware, or something else (a desktop
+  session) holding the display
+- Installed python-mpv from apt? Remove it and use `uv sync --extra mpv`
+  (the apt package is the incompatible 0.x API)
+- Black screen when idle is expected if `IDLE_VIDEO_PATH` is unset or the file
+  is missing - the startup log says so explicitly
 
 ### Videos won't download
 - **Check if ffmpeg is installed**: Run `ffmpeg -version` in terminal
