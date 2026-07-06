@@ -59,6 +59,8 @@ chase them by editing Pyright config; run `uv sync` and/or defer to `ty` instead
 - `SERVER_HOST` - Required for Docker, auto-detected in dev mode
 - `SERVER_PORT` - Default: 8000
 - `LOG_LEVEL` - Default: INFO
+- `PLAYER_BACKEND` - Playback backend: `chromecast` (default) or `mpv`
+- `IDLE_VIDEO_PATH` - mpv only: looped idle screensaver video (unset = disabled)
 
 ### Make targets
 
@@ -118,7 +120,8 @@ uv run ruff format .
 - **Backend**: FastAPI + Python 3.13 + aiosqlite
 - **Frontend**: Jinja2 templates + HTMX + DaisyUI (Tailwind CSS)
 - **Real-time**: Server-Sent Events (SSE) for queue updates
-- **Media**: yt-dlp (requires ffmpeg) + pychromecast
+- **Media**: yt-dlp (requires ffmpeg) + pychromecast; optional mpv backend
+  (python-mpv via the `mpv` extra) for local HDMI output on a Raspberry Pi
 - **Deployment**: Gunicorn + Uvicorn workers
 
 ### Key Architectural Patterns
@@ -302,7 +305,10 @@ Auto-appends "karaoke" to search queries. Uses YouTube Data API v3 with:
 │   │   ├── youtube.py       # YouTube API search
 │   │   ├── download.py      # yt-dlp video downloads
 │   │   ├── playout.py       # Queue policy + playout thread (device-independent)
-│   │   ├── players/         # Player contract + ChromecastPlayer backend
+│   │   ├── players/         # Player contract + backends (factory-selected)
+│   │   │   ├── chromecast_player.py  # Chromecast backend
+│   │   │   ├── mpv_player.py         # mpv/DRM backend + idle screensaver
+│   │   │   └── factory.py            # PLAYER_BACKEND -> Player
 │   │   └── queue_manager.py # Queue CRUD + SSE broadcasting
 │   └── templates/           # Jinja2 templates (HTMX-based)
 ├── data/

@@ -94,3 +94,29 @@ def test_chromecast_player_satisfies_protocol():
     from app.services.players.chromecast_player import ChromecastPlayer
 
     assert isinstance(ChromecastPlayer(), Player)
+
+
+def test_factory_creates_chromecast():
+    """'chromecast' resolves to the Chromecast backend."""
+    from app.services.players.chromecast_player import ChromecastPlayer
+    from app.services.players.factory import create_player
+
+    assert isinstance(create_player("chromecast"), ChromecastPlayer)
+
+
+def test_factory_creates_mpv():
+    """'mpv' resolves to the mpv backend (constructing it needs no libmpv)."""
+    from app.services.players.factory import create_player
+    from app.services.players.mpv_player import MpvPlayer
+
+    assert isinstance(create_player("mpv"), MpvPlayer)
+
+
+def test_factory_rejects_unknown_backend():
+    """Defense in depth behind the settings validator."""
+    import pytest as _pytest
+
+    from app.services.players.factory import create_player
+
+    with _pytest.raises(ValueError):
+        create_player("vlc")

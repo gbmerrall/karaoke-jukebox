@@ -21,6 +21,12 @@ dependencies = [
     "yt-dlp[default]>=2026.6.9",
 ]
 
+[project.optional-dependencies]
+# Local video output backend (PLAYER_BACKEND=mpv). Needs the libmpv system
+# library at runtime (Debian/Raspberry Pi OS: apt install libmpv2).
+# Install on the Pi with: uv sync --extra mpv
+mpv = ["python-mpv"]
+
 # No [build-system]: this is a web app, not an installable package. uv manages
 # the environment without trying to build/install the project itself. The ASGI
 # app object is imported as app.main:app from the repository root.

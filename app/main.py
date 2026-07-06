@@ -85,6 +85,10 @@ async def lifespan(app: FastAPI):
 
     playout_service.set_event_loop(asyncio.get_running_loop())
 
+    # Acquire the backend's app-lifetime resources (mpv: persistent handle +
+    # idle screensaver; Chromecast: no-op).
+    playout_service.startup()
+
     # Ensure data directories exist
     settings.get_videos_dir().mkdir(parents=True, exist_ok=True)
     logger.info(f"Data directory: {settings.data_dir}")
@@ -100,38 +104,41 @@ async def lifespan(app: FastAPI):
         logger.warning("   Ubuntu: apt-get install ffmpeg")
 
     # Check and log server configuration for Chromecast
-    logger.info("=" * 60)
-    logger.info("SERVER CONFIGURATION FOR CHROMECAST")
-    logger.info("=" * 60)
+    if settings.player_backend == "chromecast":
+        logger.info("=" * 60)
+        logger.info("SERVER CONFIGURATION FOR CHROMECAST")
+        logger.info("=" * 60)
 
-    if settings.is_docker():
-        logger.info("Environment: Docker container detected")
-        if settings.server_host:
-            logger.info(
-                f"Server Host: {settings.server_host} (from SERVER_HOST env var)"
-            )
+        if settings.is_docker():
+            logger.info("Environment: Docker container detected")
+            if settings.server_host:
+                logger.info(
+                    f"Server Host: {settings.server_host} (from SERVER_HOST env var)"
+                )
+            else:
+                logger.error("SERVER_HOST is NOT SET!")
+                logger.error("   Chromecast will NOT be able to access videos!")
+                logger.error("   Set SERVER_HOST to your Docker host's IP address")
+                logger.error("   Example: SERVER_HOST=192.168.1.100")
         else:
-            logger.error("SERVER_HOST is NOT SET!")
-            logger.error("   Chromecast will NOT be able to access videos!")
-            logger.error("   Set SERVER_HOST to your Docker host's IP address")
-            logger.error("   Example: SERVER_HOST=192.168.1.100")
+            logger.info("Environment: Development (not Docker)")
+            if settings.server_host:
+                logger.info(
+                    f"Server Host: {settings.server_host} (from SERVER_HOST env var)"
+                )
+            else:
+                detected_host = settings.get_local_ip()
+                logger.info(f"Server Host: {detected_host} (auto-detected)")
+
+        logger.info(f"Server Port: {settings.server_port}")
+
+        # Show example Chromecast URL
+        example_url = settings.get_video_url("EXAMPLE_VIDEO_ID")
+        logger.info(f"Example Chromecast URL: {example_url}")
+        logger.info("Chromecasts must be able to reach this URL on your network")
+        logger.info("=" * 60)
     else:
-        logger.info("Environment: Development (not Docker)")
-        if settings.server_host:
-            logger.info(
-                f"Server Host: {settings.server_host} (from SERVER_HOST env var)"
-            )
-        else:
-            detected_host = settings.get_local_ip()
-            logger.info(f"Server Host: {detected_host} (auto-detected)")
-
-    logger.info(f"Server Port: {settings.server_port}")
-
-    # Show example Chromecast URL
-    example_url = settings.get_video_url("EXAMPLE_VIDEO_ID")
-    logger.info(f"Example Chromecast URL: {example_url}")
-    logger.info("Chromecasts must be able to reach this URL on your network")
-    logger.info("=" * 60)
+        logger.info("Playback backend: mpv (local video output)")
 
     # Start cleanup scheduler
     if settings.queue_cleanup_interval_hours > 0:

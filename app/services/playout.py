@@ -18,9 +18,10 @@ import time
 from typing import Dict, List, Optional
 
 # project imports
+from app.config import settings
 from app.database import get_db
 from app.services.players import PlaybackOutcome, Player
-from app.services.players.chromecast_player import ChromecastPlayer
+from app.services.players.factory import create_player
 
 logger = logging.getLogger(__name__)
 
@@ -366,5 +367,6 @@ class PlayoutService:
             )
 
 
-# Global instance (the mpv spec replaces this hardcoded wiring with a factory)
-playout_service = PlayoutService(ChromecastPlayer())
+# Global instance. The backend comes from PLAYER_BACKEND; a future runtime
+# toggle would rebuild this via the same factory.
+playout_service = PlayoutService(create_player(settings.player_backend))
