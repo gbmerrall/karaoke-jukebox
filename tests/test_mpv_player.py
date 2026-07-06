@@ -73,11 +73,15 @@ class FakeMpvHandle:
     def fire_end_file(self, reason):
         """Deliver an end-file event to the backend (mpv event thread stand-in).
 
-        Mirrors real python-mpv's as_dict() shape, which nests the
-        event-specific payload (including `reason`) under an "event" key.
+        Mirrors python-mpv >= 1.0's as_dict() shape: a FLAT map produced by
+        libmpv's mpv_event_to_node, e.g. {"event": b"end-file", "reason":
+        b"eof", "playlist_entry_id": N} - "event" is the event NAME, and the
+        reason sits at the top level (verified against the python-mpv 1.0.8
+        wheel, mpv.py:418). The nested {"event": {"reason": ...}} form belongs
+        to the legacy 0.x API and is covered by its own dedicated test.
         """
         self.handlers["end-file"](
-            _FakeEvent({"event_id": 7, "event": {"reason": reason}})
+            _FakeEvent({"event": b"end-file", "reason": reason, "playlist_entry_id": 1})
         )
 
 
@@ -182,18 +186,19 @@ def test_eof_returns_finished(make_backend):
     assert handle.play_calls[0][1] == "no"  # loop_file 'no' for songs
 
 
-def test_eof_int_code_nested_under_event_returns_finished(make_backend):
-    """python-mpv 1.0.8 delivers the eof reason as int 0 nested under "event".
+def test_legacy_nested_event_shape_returns_finished(make_backend):
+    """Legacy python-mpv 0.x nests the payload: {"event": {"reason": <int>}}.
 
-    Regression test for a bug where _on_end_file read data["reason"] (always
-    None, since real python-mpv nests it under data["event"]["reason"]),
-    silently mapping every natural end-of-song to FAILED.
+    The apt-packaged python3-mpv on Debian/Raspberry Pi OS is still the 0.x
+    API family, so _on_end_file keeps a nested-dict fallback. python-mpv >= 1.0
+    (the locked dependency) uses the flat shape exercised by fire_end_file and
+    every other test in this file.
     """
     player, handle = make_backend()
     _add_video()
     thread, result, _, _ = _start_play(player)
     assert player._load_confirmed.wait(2)
-    handle.handlers["end-file"](_FakeEvent({"event": {"reason": 0}}))
+    handle.handlers["end-file"](_FakeEvent({"event_id": 7, "event": {"reason": 0}}))
     thread.join(timeout=2)
     assert result["outcome"] is PlaybackOutcome.FINISHED
 

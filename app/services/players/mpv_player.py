@@ -112,15 +112,24 @@ class MpvPlayer:
         player logs, stays unavailable, and connect() returns False so the
         playout loop aborts cleanly while the admin UI stays reachable.
         """
+        player = None
         try:
             mpv_module = self._mpv_module
             if mpv_module is None:
                 # Deferred import: requires libmpv (install the 'mpv' extra).
-                import mpv as mpv_module
+                # ty can't resolve it in dev envs (the extra is Pi-only).
+                import mpv as mpv_module  # ty: ignore[unresolved-import]
             player = mpv_module.MPV(**MPV_OPTIONS)
             player.event_callback("end-file")(self._on_end_file)
         except Exception as e:
             logger.error(f"mpv initialization failed: {e}", exc_info=True)
+            if player is not None:
+                # A created handle holds the DRM device; release it or the
+                # display stays claimed until the app restarts.
+                try:
+                    player.terminate()
+                except Exception as term_error:
+                    logger.warning(f"Error terminating failed mpv init: {term_error}")
             self._player = None
             return
 
@@ -350,10 +359,12 @@ class MpvPlayer:
         docstring). play() decides what a recorded ending means.
 
         Args:
-            event: python-mpv event object (only as_dict() is used). Real
-                python-mpv nests the event-specific payload under an "event"
-                key (e.g. {"event": {"reason": ...}}); a flat {"reason": ...}
-                is accepted too as a defensive fallback across versions.
+            event: python-mpv event object (only as_dict() is used). In
+                python-mpv >= 1.0 (the locked dependency) as_dict() is a FLAT
+                map from libmpv's mpv_event_to_node: {"event": b"end-file",
+                "reason": b"eof", ...}. The nested {"event": {"reason": ...}}
+                form is the legacy 0.x API (e.g. Debian's apt-packaged
+                python3-mpv) and is read as a fallback.
         """
         try:
             data = event.as_dict()

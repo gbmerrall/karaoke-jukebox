@@ -25,7 +25,9 @@ dependencies = [
 # Local video output backend (PLAYER_BACKEND=mpv). Needs the libmpv system
 # library at runtime (Debian/Raspberry Pi OS: apt install libmpv2).
 # Install on the Pi with: uv sync --extra mpv
-mpv = ["python-mpv"]
+# Floor at 1.0: the 0.x API family (Debian's apt python3-mpv) has a different
+# event shape; the backend keeps only a read fallback for it, not support.
+mpv = ["python-mpv>=1.0"]
 
 # No [build-system]: this is a web app, not an installable package. uv manages
 # the environment without trying to build/install the project itself. The ASGI

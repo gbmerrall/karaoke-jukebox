@@ -629,7 +629,7 @@ requires-dist = [
     { name = "jinja2" },
     { name = "pychromecast" },
     { name = "pydantic-settings" },
-    { name = "python-mpv", marker = "extra == 'mpv'" },
+    { name = "python-mpv", marker = "extra == 'mpv'", specifier = ">=1.0" },
     { name = "python-multipart" },
     { name = "uvicorn", extras = ["standard"] },
     { name = "yt-dlp", extras = ["default"], specifier = ">=2026.6.9" },
