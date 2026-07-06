@@ -52,3 +52,38 @@ def test_empty_admin_password_rejected():
     """An empty admin password is refused."""
     with pytest.raises(ValidationError):
         _make(admin_password="   ")
+
+
+def test_default_player_backend_is_chromecast():
+    """Existing deployments keep Chromecast without setting anything."""
+    assert _make().player_backend == "chromecast"
+
+
+def test_player_backend_normalizes_case():
+    """PLAYER_BACKEND=MPV works (normalized to lowercase)."""
+    assert _make(player_backend="MPV").player_backend == "mpv"
+
+
+def test_unknown_player_backend_rejected():
+    """A typo in PLAYER_BACKEND fails startup instead of silently falling back."""
+    with pytest.raises(ValidationError):
+        _make(player_backend="vlc")
+
+
+def test_idle_video_path_defaults_to_none():
+    """No screensaver configured means None (disabled)."""
+    assert _make().idle_video_path is None
+
+
+def test_empty_idle_video_path_treated_as_unset():
+    """IDLE_VIDEO_PATH= (blank) must not become Path('') / Path('.')."""
+    assert _make(idle_video_path="   ").idle_video_path is None
+
+
+def test_idle_video_path_parses_to_path():
+    """A set value parses into a Path."""
+    from pathlib import Path
+
+    assert _make(idle_video_path="./data/idle.mp4").idle_video_path == Path(
+        "data/idle.mp4"
+    )

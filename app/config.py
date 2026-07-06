@@ -6,6 +6,7 @@ Loads configuration from environment variables or .env file.
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator, ValidationError
 from pathlib import Path
+from typing import Optional
 import socket
 import logging
 import sys
@@ -47,6 +48,12 @@ class Settings(BaseSettings):
     # Server Configuration
     server_host: str = ""  # Auto-detect if not set
     server_port: int = 8000
+
+    # Playback backend: 'chromecast' (default) or 'mpv' (local video output).
+    player_backend: str = "chromecast"
+    # mpv only: video looped as an idle screensaver when nothing is playing.
+    # None = disabled (black screen when idle).
+    idle_video_path: Optional[Path] = None
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
@@ -107,6 +114,23 @@ class Settings(BaseSettings):
                 f"LOG_LEVEL must be one of: {', '.join(valid_levels)}. Got: {v}"
             )
         return v_upper
+
+    @field_validator("player_backend")
+    @classmethod
+    def validate_player_backend(cls, v: str) -> str:
+        """Validate the playback backend selection (fail fast on typos)."""
+        v_lower = v.strip().lower()
+        if v_lower not in ("chromecast", "mpv"):
+            raise ValueError(f"PLAYER_BACKEND must be 'chromecast' or 'mpv'. Got: {v}")
+        return v_lower
+
+    @field_validator("idle_video_path", mode="before")
+    @classmethod
+    def empty_idle_video_path_is_none(cls, v):
+        """Treat a blank IDLE_VIDEO_PATH as unset (screensaver disabled)."""
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        return v
 
     def get_db_path(self) -> Path:
         """Get the full path to the SQLite database file."""
@@ -246,6 +270,9 @@ def load_settings() -> Settings:
         )
         logger.error("  - SERVER_HOST: Server IP for Chromecast (auto-detected in dev)")
         logger.error("  - SERVER_PORT: Server port (default: 8000)")
+        logger.error(
+            "  - PLAYER_BACKEND: 'chromecast' (default) or 'mpv' (local HDMI output)"
+        )
         logger.error("  - DATA_DIR: Data directory path (default: ./data)")
         logger.error("")
         logger.error("Create a .env file or set these environment variables.")
