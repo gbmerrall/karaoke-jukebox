@@ -191,6 +191,14 @@ PLAYER_BACKEND=mpv
 IDLE_VIDEO_PATH=./data/idle.mp4
 ```
 
+**Where to put the idle video:** anywhere EXCEPT `data/videos/`. That directory
+is managed by the cleanup job, which deletes any `.mp4` not referenced by a
+queue item after a few hours - your screensaver would disappear mid-party. The
+recommended spot is the `data/` root (`./data/idle.mp4`, as above); any other
+path outside `data/videos/` works too, since `IDLE_VIDEO_PATH` is just a file
+path. Any format/resolution mpv can decode is fine - it plays on a loop, so a
+short clip (10-30 seconds) is plenty.
+
 On the Pi (or any Linux box with a free DRM output):
 
 ```bash
