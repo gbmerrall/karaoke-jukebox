@@ -79,6 +79,14 @@ class ChromecastPlayer:
         # pre-refactor behavior (that block ran under playout_lock).
         self._lock = threading.Lock()
 
+    def startup(self) -> None:
+        """No app-lifetime resources: the cast connection is per playout session."""
+        return None
+
+    def shutdown(self) -> None:
+        """No app-lifetime resources: cleanup() already releases the session."""
+        return None
+
     async def discover_devices(
         self, timeout: int = 10, keep_connection: bool = False
     ) -> List[Dict]:

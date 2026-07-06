@@ -31,12 +31,28 @@ class PlaybackOutcome(Enum):
 class Player(Protocol):
     """Contract between PlayoutService (queue policy) and a playback device.
 
-    Backends without discoverable devices set supports_discovery = False and
-    implement discover_devices/select_device as stubs returning [] / False.
+    Lifecycle: startup()/shutdown() bracket the APP lifetime (persistent
+    resources like mpv's handle); connect()/cleanup() bracket ONE playout
+    session (the playout thread's connection). Backends without discoverable
+    devices set supports_discovery = False and implement
+    discover_devices/select_device as stubs returning [] / False.
     """
 
     supports_discovery: bool
     selected_device_uuid: Optional[str]
+
+    def startup(self) -> None:
+        """Acquire app-lifetime resources. Called once from the app lifespan
+        before any playback. Must not raise: implementations log failures and
+        remember them so connect() returns False afterwards.
+        """
+        ...
+
+    def shutdown(self) -> None:
+        """Release app-lifetime resources. Called once at app exit, after the
+        playout thread has been joined.
+        """
+        ...
 
     def connect(self) -> bool:
         """Prepare the device for playback. Called once per playout thread.

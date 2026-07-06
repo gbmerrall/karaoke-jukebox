@@ -32,6 +32,8 @@ class FakePlayer:
         self.selected_device_uuid = "fake-uuid"
         self.cleaned_up = False
         self.played = []
+        self.started_up = False
+        self.shut_down = False
 
     def connect(self):
         return self.connect_ok
@@ -42,6 +44,12 @@ class FakePlayer:
 
     def cleanup(self):
         self.cleaned_up = True
+
+    def startup(self):
+        self.started_up = True
+
+    def shutdown(self):
+        self.shut_down = True
 
     async def discover_devices(self, timeout=10, keep_connection=False):
         return [{"name": "Fake", "uuid": "fake-uuid"}]
@@ -121,13 +129,43 @@ def _run_one_song(outcome, qid=1, player=None):
 # ---------------------------------------------------------------------------
 
 
-def test_start_playback_requires_selected_device():
-    """Starting without a selected device fails with the exact legacy message."""
+def test_start_playback_discovery_backend_requires_device():
+    """A discovery backend with no device selected refuses to start."""
     player = FakePlayer()
+    player.supports_discovery = True
     player.selected_device_uuid = None
     service = PlayoutService(player)
     result = service.start_playback()
-    assert result == {"success": False, "message": "No Chromecast device selected"}
+    assert result == {"success": False, "message": "No playback device selected"}
+
+
+def test_start_playback_discoveryless_backend_needs_no_device():
+    """A backend without discovery (mpv) starts with no device selected."""
+    player = FakePlayer()
+    player.selected_device_uuid = None
+    service = PlayoutService(player)
+    with patch.object(service, "_playout_loop", MagicMock()):
+        result = service.start_playback()
+        assert result["success"] is True
+    if service.playout_thread:
+        service.playout_thread.join(timeout=1)
+
+
+def test_startup_delegates_to_player():
+    """PlayoutService.startup() acquires the backend's app-lifetime resources."""
+    player = FakePlayer()
+    service = PlayoutService(player)
+    service.startup()
+    assert player.started_up is True
+
+
+def test_shutdown_releases_player():
+    """shutdown() releases the backend after the playout thread is joined."""
+    player = FakePlayer()
+    service = PlayoutService(player)
+    service.playout_thread = None
+    service.shutdown(timeout=1)
+    assert player.shut_down is True
 
 
 def test_start_playback_spawns_thread_and_blocks_second_start():

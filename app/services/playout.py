@@ -75,6 +75,10 @@ class PlayoutService:
         self.main_loop = loop
         logger.info("Main event loop reference set for PlayoutService")
 
+    def startup(self) -> None:
+        """Acquire the backend's app-lifetime resources (lifespan startup hook)."""
+        self.player.startup()
+
     async def discover_devices(self, timeout: int = 10) -> List[Dict]:
         """Scan for output devices via the backend.
 
@@ -115,8 +119,8 @@ class PlayoutService:
             if self.is_playing:
                 return {"success": False, "message": "Playback is already active"}
 
-            if not self.player.selected_device_uuid:
-                return {"success": False, "message": "No Chromecast device selected"}
+            if self.player.supports_discovery and not self.player.selected_device_uuid:
+                return {"success": False, "message": "No playback device selected"}
 
             self.is_playing = True
             self.stop_requested.clear()
@@ -162,7 +166,7 @@ class PlayoutService:
         return {"success": True, "message": "Skipping current song"}
 
     def shutdown(self, timeout: float = 10.0) -> None:
-        """Stop playback and join the playout thread for a clean exit.
+        """Stop playback, join the playout thread, and release the backend.
 
         Args:
             timeout: Seconds to wait for the playout thread to finish.
@@ -176,6 +180,8 @@ class PlayoutService:
             thread.join(timeout=timeout)
             if thread.is_alive():
                 logger.warning("Playout thread did not stop within timeout")
+        # After the join so the playout thread cannot race the release.
+        self.player.shutdown()
 
     def _playout_loop(self) -> None:
         """Background thread: play queue items until stopped.

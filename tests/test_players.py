@@ -30,6 +30,12 @@ class _StubPlayer:
     def __init__(self):
         self.selected_device_uuid: Optional[str] = None
 
+    def startup(self) -> None:
+        return None
+
+    def shutdown(self) -> None:
+        return None
+
     def connect(self) -> bool:
         return True
 
@@ -56,3 +62,35 @@ class _StubPlayer:
 def test_stub_player_satisfies_protocol():
     """A structural (duck-typed) backend passes the runtime protocol check."""
     assert isinstance(_StubPlayer(), Player)
+
+
+def test_protocol_requires_lifecycle_methods():
+    """A backend without startup/shutdown no longer satisfies the protocol."""
+
+    class NoLifecycle:
+        supports_discovery = False
+        selected_device_uuid = None
+
+        def connect(self) -> bool:
+            return True
+
+        def play(self, video_id, skip_event, stop_event) -> PlaybackOutcome:
+            return PlaybackOutcome.FINISHED
+
+        def cleanup(self) -> None:
+            return None
+
+        async def discover_devices(self, timeout=10, keep_connection=False):
+            return []
+
+        def select_device(self, device_uuid) -> bool:
+            return False
+
+    assert not isinstance(NoLifecycle(), Player)
+
+
+def test_chromecast_player_satisfies_protocol():
+    """The Chromecast backend implements the grown protocol (incl. lifecycle)."""
+    from app.services.players.chromecast_player import ChromecastPlayer
+
+    assert isinstance(ChromecastPlayer(), Player)
