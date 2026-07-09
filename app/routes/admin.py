@@ -6,6 +6,7 @@ All routes require admin authentication.
 from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from app.config import settings
 from app.routes.auth import require_admin
 from app.services.playout import playout_service
 from app.services.queue_manager import queue_manager
@@ -41,6 +42,9 @@ async def admin_page(request: Request):
             "username": username,
             "is_admin": is_admin,
             "queue": queue,
+            # Lets the template branch the playout-control card: Chromecast shows
+            # device discovery, mpv shows a fixed local-HDMI output.
+            "player_backend": settings.player_backend,
         },
     )
 

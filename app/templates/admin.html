@@ -6,7 +6,7 @@
 <!-- Admin Header -->
 <div class="mb-6">
     <h1 class="text-3xl font-bold">Admin Control Panel</h1>
-    <p class="text-gray-500">Manage queue and control Chromecast playback</p>
+    <p class="text-gray-500">Manage the queue and control playback</p>
 </div>
 
 <!-- Queue Section -->
@@ -40,11 +40,21 @@
     </div>
 </div>
 
-<!-- Chromecast Control Section -->
+<!-- Playout Control Section -->
 <div class="mb-6">
-    <h2 class="text-2xl font-bold mb-4">Chromecast Control</h2>
+    <h2 class="text-2xl font-bold mb-4">Playout Control</h2>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {% if player_backend == 'mpv' %}
+        <!-- Local HDMI output: mpv has no discoverable devices to pick.
+             Output selection (connector/audio) will be added here later. -->
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h3 class="card-title text-lg">Output Device</h3>
+                <p class="text-sm text-gray-500">HDMI playout</p>
+            </div>
+        </div>
+        {% else %}
         <!-- Device Selection -->
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
@@ -67,6 +77,7 @@
                 </div>
             </div>
         </div>
+        {% endif %}
 
         <!-- Playback Controls -->
         <div class="card bg-base-100 shadow-xl">
@@ -78,7 +89,7 @@
                         class="btn btn-success"
                         hx-post="/admin/playback/start"
                         hx-target="#admin-status"
-                        disabled
+                        {% if player_backend != 'mpv' %}disabled{% endif %}
                     >
                         ▶️ Start Playback
                     </button>
@@ -87,7 +98,7 @@
                         class="btn btn-warning"
                         hx-post="/admin/playback/skip"
                         hx-target="#admin-status"
-                        disabled
+                        {% if player_backend != 'mpv' %}disabled{% endif %}
                     >
                         ⏭️ Skip Current Song
                     </button>
@@ -96,12 +107,16 @@
                         class="btn btn-error"
                         hx-post="/admin/playback/stop"
                         hx-target="#admin-status"
-                        disabled
+                        {% if player_backend != 'mpv' %}disabled{% endif %}
                     >
                         ⏹️ Stop Playback
                     </button>
                 </div>
+                {% if player_backend == 'mpv' %}
+                <p id="device-status" class="text-sm text-success mt-2">Local HDMI output ready</p>
+                {% else %}
                 <p id="device-status" class="text-sm text-warning mt-2">No device selected</p>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -170,6 +185,10 @@
             }
         }
     });
+
+    // Active playback backend, injected server-side. 'mpv' has no device
+    // discovery, so its playback controls are never gated on a selection.
+    const PLAYER_BACKEND = "{{ player_backend }}";
 
     // Track selected device and playback state
     let selectedDeviceUuid = null;
@@ -331,6 +350,11 @@
         const scanBtn = document.getElementById('scan-btn');
         const tooltip = document.getElementById('scan-btn-tooltip');
 
+        // mpv renders no scan panel, so there is nothing to toggle.
+        if (!scanBtn || !tooltip) {
+            return;
+        }
+
         if (isPlaying) {
             // Disable scan button during playback
             scanBtn.setAttribute('disabled', 'disabled');
@@ -346,7 +370,11 @@
         }
     }
 
-    // Initialize scan button state on page load
-    updateScanButton();
+    // Initialize control state on page load.
+    updateScanButton();  // no-op for mpv (no scan panel)
+    if (PLAYER_BACKEND === 'mpv') {
+        // No device to pick for local HDMI output: enable controls immediately.
+        updatePlaybackButtons(true);
+    }
 </script>
 {% endblock %}

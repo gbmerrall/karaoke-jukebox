@@ -10,6 +10,8 @@ Authentication is exercised two ways:
   directly (the cookie-decode path).
 """
 
+import re
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock
 
@@ -552,6 +554,46 @@ def test_admin_page(_admin_mocks):
     """The admin page renders with the current queue."""
     response = _admin_client().get("/admin/")
     assert response.status_code == 200
+
+
+def _start_btn_tag(html: str) -> str:
+    """Return the opening <button> tag for the start-playback control.
+
+    Args:
+        html: Rendered admin page markup.
+
+    Returns:
+        The matched opening tag text (raises AssertionError if absent).
+    """
+    match = re.search(r'id="start-playback-btn".*?>', html, re.S)
+    assert match, "start-playback button not found in admin page"
+    return match.group(0)
+
+
+def test_admin_page_mpv_renders_hdmi_and_enables_playback(_admin_mocks, monkeypatch):
+    """With the mpv backend the device card is HDMI and playback is not gated."""
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "player_backend", "mpv")
+    html = _admin_client().get("/admin/").text
+    assert "Playout Control" in html
+    assert "HDMI playout" in html
+    assert "Scan for Devices" not in html
+    # mpv has no device to select, so the start button must render enabled.
+    assert "disabled" not in _start_btn_tag(html)
+
+
+def test_admin_page_chromecast_keeps_scan_and_gates_playback(_admin_mocks, monkeypatch):
+    """The Chromecast backend keeps device discovery and disabled-by-default buttons."""
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "player_backend", "chromecast")
+    html = _admin_client().get("/admin/").text
+    assert "Playout Control" in html
+    assert "Scan for Devices" in html
+    assert "HDMI playout" not in html
+    # Chromecast keeps the device-selection gate: start disabled until a pick.
+    assert "disabled" in _start_btn_tag(html)
 
 
 def test_admin_non_admin_redirects():
