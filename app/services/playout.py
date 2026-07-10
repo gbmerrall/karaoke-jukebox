@@ -15,7 +15,7 @@ import asyncio
 import logging
 import threading
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # project imports
 from app.config import settings
@@ -109,6 +109,49 @@ class PlayoutService:
             True if the backend accepted the selection.
         """
         return self.player.select_device(device_uuid)
+
+    def list_video_outputs(self) -> List[Dict[str, str]]:
+        """List available local video outputs via the backend.
+
+        Returns:
+            Output dicts from the backend's list_video_outputs(); [] for
+            backends without local-output selection (e.g. Chromecast).
+        """
+        list_fn = getattr(self.player, "list_video_outputs", None)
+        if list_fn is None:
+            return []
+        return list_fn()
+
+    def list_audio_outputs(self) -> List[Dict[str, str]]:
+        """List available local audio outputs via the backend.
+
+        Returns:
+            Output dicts from the backend's list_audio_outputs(); [] for
+            backends without local-output selection.
+        """
+        list_fn = getattr(self.player, "list_audio_outputs", None)
+        if list_fn is None:
+            return []
+        return list_fn()
+
+    def select_output(
+        self, drm_device: str, drm_connector: str, audio_device: str
+    ) -> Tuple[bool, str]:
+        """Select the local video/audio output via the backend.
+
+        Args:
+            drm_device: Backend-specific video device identifier.
+            drm_connector: Backend-specific connector identifier.
+            audio_device: Backend-specific audio device identifier.
+
+        Returns:
+            (True, "") on success; (False, message) on rejection, failure,
+            or when the backend does not support output selection.
+        """
+        select_fn = getattr(self.player, "select_output", None)
+        if select_fn is None:
+            return (False, "This backend does not support output selection")
+        return select_fn(drm_device, drm_connector, audio_device)
 
     def start_playback(self) -> Dict:
         """Start playback from the queue.

@@ -59,6 +59,31 @@ class FakePlayer:
         return True
 
 
+class FakeOutputPlayer(FakePlayer):
+    """FakePlayer extended with mpv-style output-selection methods."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.select_output_result = (True, "")
+        self.select_output_call = None
+
+    def list_video_outputs(self):
+        return [
+            {
+                "drm_device": "/dev/dri/card0",
+                "drm_connector": "HDMI-A-1",
+                "label": "HDMI-A-1 (card0)",
+            }
+        ]
+
+    def list_audio_outputs(self):
+        return [{"name": "auto", "description": "Autoselect device"}]
+
+    def select_output(self, drm_device, drm_connector, audio_device):
+        self.select_output_call = (drm_device, drm_connector, audio_device)
+        return self.select_output_result
+
+
 def _item(qid=1):
     """Return a minimal queue row dict as produced by _get_queue_sync."""
     return {"id": qid, "video_id": "dQw4w9WgXcQ", "title": "Song"}
@@ -294,6 +319,62 @@ async def test_discover_devices_without_capability_returns_empty():
     player.supports_discovery = False
     service = PlayoutService(player)
     assert await service.discover_devices(timeout=0) == []
+
+
+def test_list_video_outputs_delegates_when_supported():
+    """Backends exposing list_video_outputs() are passed through."""
+    player = FakeOutputPlayer()
+    service = PlayoutService(player)
+    assert service.list_video_outputs() == [
+        {
+            "drm_device": "/dev/dri/card0",
+            "drm_connector": "HDMI-A-1",
+            "label": "HDMI-A-1 (card0)",
+        }
+    ]
+
+
+def test_list_video_outputs_empty_without_support():
+    """Backends without the method (e.g. Chromecast) yield []."""
+    player = FakePlayer()
+    service = PlayoutService(player)
+    assert service.list_video_outputs() == []
+
+
+def test_list_audio_outputs_delegates_when_supported():
+    """Backends exposing list_audio_outputs() are passed through."""
+    player = FakeOutputPlayer()
+    service = PlayoutService(player)
+    assert service.list_audio_outputs() == [
+        {"name": "auto", "description": "Autoselect device"}
+    ]
+
+
+def test_list_audio_outputs_empty_without_support():
+    """Backends without the method yield []."""
+    player = FakePlayer()
+    service = PlayoutService(player)
+    assert service.list_audio_outputs() == []
+
+
+def test_select_output_delegates_when_supported():
+    """select_output passes its args through and returns the backend's result."""
+    player = FakeOutputPlayer()
+    player.select_output_result = (True, "")
+    service = PlayoutService(player)
+    ok, message = service.select_output("/dev/dri/card0", "HDMI-A-1", "auto")
+    assert ok is True
+    assert message == ""
+    assert player.select_output_call == ("/dev/dri/card0", "HDMI-A-1", "auto")
+
+
+def test_select_output_rejects_without_support():
+    """Backends without select_output() (e.g. Chromecast) reject cleanly."""
+    player = FakePlayer()
+    service = PlayoutService(player)
+    ok, message = service.select_output("/dev/dri/card0", "HDMI-A-1", "auto")
+    assert ok is False
+    assert "does not support" in message.lower()
 
 
 # ---------------------------------------------------------------------------
