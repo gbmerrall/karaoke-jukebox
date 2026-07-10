@@ -41,7 +41,7 @@ MPV_OPTIONS = {
     "drm_connector": "HDMI-A-2",
     "drm_mode": "1280x720",
     "hwdec": "v4l2m2m",
-    "audio_device="alsa/sysdefault:CARD=iBassoDCSeries",
+    "audio_device": "alsa/sysdefault:CARD=iBassoDCSeries",
     "idle": "yes",  # keep the handle alive with nothing loaded
 }
 
