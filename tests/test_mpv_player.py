@@ -8,8 +8,10 @@ drive it via the fake handle.
 """
 
 # standard library
+import os
 import threading
 import time
+from pathlib import Path
 
 # 3rd party
 import pytest
@@ -114,7 +116,14 @@ def make_backend(tmp_path, monkeypatch):
     monkeypatch.setattr(mpv_player, "POLL_INTERVAL", 0.01)
     settings.get_videos_dir().mkdir(parents=True, exist_ok=True)
 
-    def factory(idle="ok", init_error=None):
+    def factory(idle="ok", init_error=None, relative_data_dir=False):
+        if relative_data_dir:
+            # Production's data_dir defaults to a relative "data" (not this
+            # fixture's default absolute tmp_path), which is what actually
+            # triggers mpv's absolute-path-expansion behavior below.
+            monkeypatch.chdir(tmp_path)
+            monkeypatch.setattr(settings, "data_dir", Path("data"))
+            settings.get_videos_dir().mkdir(parents=True, exist_ok=True)
         if idle == "ok":
             idle_file = tmp_path / "idle.mp4"
             idle_file.write_bytes(b"fake idle video")
@@ -305,6 +314,33 @@ def test_stale_end_event_from_replaced_idle_is_discarded(make_backend):
     assert result["outcome"] is PlaybackOutcome.FINISHED
 
 
+def test_load_confirmed_when_mpv_reports_absolute_path(make_backend, monkeypatch):
+    """mpv expands the loaded path to absolute; confirmation must still match.
+
+    mpv's `path` property is documented to report the loaded file "expanded
+    to an absolute path" (cwd prepended) - not the literal string passed to
+    play(). Production requests a *relative* path (data_dir defaults to
+    "data"), so a naive string comparison against the raw request never
+    matches mpv's real report, and _wait_for_load times out even though
+    playback is genuinely happening.
+    """
+    monkeypatch.setattr(mpv_player, "LOAD_TIMEOUT", 0.2)
+    player, handle = make_backend(relative_data_dir=True)
+    handle.auto_load = False  # we control exactly what mpv reports back
+    _add_video()
+    thread, result, _, _ = _start_play(player)
+    assert _wait_until(lambda: handle.play_calls)
+    requested_path, _ = handle.play_calls[-1]
+    assert not os.path.isabs(requested_path), (
+        "test setup should request a relative path"
+    )
+    handle.path = os.path.abspath(requested_path)  # mpv's real reporting behavior
+    assert player._load_confirmed.wait(2)
+    handle.fire_end_file(b"eof")
+    thread.join(timeout=2)
+    assert result["outcome"] is PlaybackOutcome.FINISHED
+
+
 def test_skip_honored_during_load_phase(make_backend):
     """A skip that lands while the file is still loading is not lost."""
     player, handle = make_backend()
@@ -351,9 +387,9 @@ def test_idle_video_inside_videos_dir_warns_but_works(make_backend, caplog):
     with caplog.at_level("WARNING", logger="app.services.players.mpv_player"):
         player, _ = make_backend(idle="in-videos-dir")
     assert player._idle_timer is not None  # still enabled
-    assert any(
-        "cleanup job" in record.message for record in caplog.records
-    ), "expected a startup warning about data/videos/ and the cleanup job"
+    assert any("cleanup job" in record.message for record in caplog.records), (
+        "expected a startup warning about data/videos/ and the cleanup job"
+    )
 
 
 def test_play_cancels_idle_timer_and_rearms_after(make_backend):

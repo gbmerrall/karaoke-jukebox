@@ -21,6 +21,7 @@ Threading and design rules (see the 2026-07-07 spec):
 
 # standard library
 import logging
+import os
 import threading
 import time
 from pathlib import Path
@@ -40,6 +41,7 @@ MPV_OPTIONS = {
     "drm_connector": "HDMI-A-2",
     "drm_mode": "1280x720",
     "hwdec": "v4l2m2m",
+    "audio_device="alsa/sysdefault:CARD=iBassoDCSeries",
     "idle": "yes",  # keep the handle alive with nothing loaded
 }
 
@@ -230,8 +232,11 @@ class MpvPlayer:
             player.play(str(video_path))
             logger.info(f"mpv loading: {video_path}")
 
+            # mpv's `path` property reports the loaded file expanded to an
+            # absolute path (cwd prepended), not the literal string given to
+            # play() - confirmation must compare against that same form.
             load_outcome = self._wait_for_load(
-                player, str(video_path), skip_event, stop_event
+                player, os.path.abspath(str(video_path)), skip_event, stop_event
             )
             if load_outcome is not None:
                 return load_outcome
