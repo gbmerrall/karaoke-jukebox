@@ -613,6 +613,31 @@ def test_select_output_recreates_handle_when_idle(make_backend):
     assert new_handle.options["vo"] == "drm"
 
 
+def test_select_output_same_device_terminates_before_building(make_backend):
+    """A same-drm_device switch (e.g. audio-only) terminates the old handle
+    up front, since mpv holds DRM master on that card."""
+    player, handle = make_backend()
+    same_device = player._current_options["drm_device"]
+    ok, message = player.select_output(same_device, "HDMI-A-1", "auto")
+    assert ok is True
+    assert handle.terminated is True
+    assert player._player is not handle
+
+
+def test_select_output_same_device_failure_leaves_player_none(make_backend):
+    """A failed same-device build leaves self._player None (the old handle
+    was already terminated before the rebuild attempt, since it had to
+    release the DRM card first)."""
+    player, handle = make_backend()
+    same_device = player._current_options["drm_device"]
+    player._mpv_module.init_error = RuntimeError("DRM device busy")
+    ok, message = player.select_output(same_device, "HDMI-A-1", "auto")
+    assert ok is False
+    assert "initialize" in message.lower()
+    assert handle.terminated is True
+    assert player._player is None
+
+
 def test_select_output_failure_keeps_old_handle(make_backend):
     """If the new handle fails to init, the old handle stays in place."""
     player, handle = make_backend()

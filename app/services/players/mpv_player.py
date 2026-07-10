@@ -173,6 +173,18 @@ class MpvPlayer:
         the handle is idle or looping the screensaver. Not persisted: the
         selection resets to MPV_OPTIONS on the next app restart.
 
+        Ordering depends on whether the new drm_device is the SAME as the
+        current one:
+        - Same device (e.g. an audio-only change, or re-selecting the
+          current output): the old handle is terminated BEFORE building the
+          new one, since mpv holds DRM master on that card and two live
+          handles cannot claim it at once. A failed build then leaves
+          self._player as None (no video until the app is restarted or
+          select_output is called again), matching a failed startup().
+        - Different device: the new handle is built BEFORE the old one is
+          terminated, so a failed build leaves the old (different-card)
+          handle fully intact and working.
+
         The whole check-and-swap runs under _state_lock - the same lock
         play() now captures self._player under - so a concurrent play()
         either runs entirely against the old handle or entirely against the
@@ -197,23 +209,45 @@ class MpvPlayer:
                 )
             self._cancel_idle_timer_locked()
             old_player = self._player
+            same_device = drm_device == self._current_options["drm_device"]
             new_options = dict(self._current_options)
             new_options["drm_device"] = drm_device
             new_options["drm_connector"] = drm_connector
             new_options["audio_device"] = audio_device
-            new_player = self._build_handle(new_options)
 
-            if new_player is None:
-                ready = False
-            else:
+            if same_device:
+                # Same DRM card: mpv holds it as DRM master, so the old
+                # handle must release it before the new one can claim it.
                 if old_player is not None:
                     try:
                         old_player.terminate()
                     except Exception as e:
                         logger.warning(f"Error terminating replaced mpv handle: {e}")
-                self._player = new_player
-                self._current_options = new_options
-                ready = True
+                new_player = self._build_handle(new_options)
+                if new_player is None:
+                    self._player = None
+                    ready = False
+                else:
+                    self._player = new_player
+                    self._current_options = new_options
+                    ready = True
+            else:
+                # Different card: safe to build first so a failed build
+                # leaves the still-valid old handle in place.
+                new_player = self._build_handle(new_options)
+                if new_player is None:
+                    ready = False
+                else:
+                    if old_player is not None:
+                        try:
+                            old_player.terminate()
+                        except Exception as e:
+                            logger.warning(
+                                f"Error terminating replaced mpv handle: {e}"
+                            )
+                    self._player = new_player
+                    self._current_options = new_options
+                    ready = True
 
         # Lock released: _arm_idle_timer() acquires it itself.
         self._arm_idle_timer()
