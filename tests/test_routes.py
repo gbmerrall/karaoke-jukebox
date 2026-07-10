@@ -628,6 +628,25 @@ def test_admin_page_chromecast_keeps_scan_and_gates_playback(_admin_mocks, monke
     assert "disabled" in _start_btn_tag(html)
 
 
+def test_admin_page_pilot_mode_shows_search_card(_admin_mocks, monkeypatch):
+    """The pilot-mode search card renders when pilot_mode is on."""
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "pilot_mode", True)
+    html = _admin_client().get("/admin/").text
+    assert 'id="pilot-search-card"' in html
+    assert 'id="pilot-search-results"' in html
+
+
+def test_admin_page_pilot_mode_off_hides_search_card(_admin_mocks, monkeypatch):
+    """The pilot-mode search card is absent when pilot_mode is off (default)."""
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "pilot_mode", False)
+    html = _admin_client().get("/admin/").text
+    assert 'id="pilot-search-card"' not in html
+
+
 def test_admin_page_mpv_renders_output_selection_controls(_admin_mocks, monkeypatch):
     """The mpv output card renders video/audio selects and an apply button."""
     from app.config import settings as app_settings

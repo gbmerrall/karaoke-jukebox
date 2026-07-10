@@ -40,6 +40,47 @@
     </div>
 </div>
 
+<!-- Pilot Mode: Queue a Song Section -->
+{% if pilot_mode %}
+<div class="mb-6" id="pilot-search-card">
+    <h2 class="text-2xl font-bold mb-4">Queue a Song</h2>
+
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <!-- Search Form -->
+            <form
+                hx-post="/search"
+                hx-target="#pilot-search-results"
+                hx-swap="innerHTML"
+            >
+                <div class="form-control">
+                    <div class="flex gap-2 w-full">
+                        <input
+                            type="text"
+                            name="query"
+                            placeholder="Search for a song or artist..."
+                            class="input input-bordered flex-1"
+                            required
+                        />
+                        <button type="submit" class="btn btn-primary">
+                            Search
+                        </button>
+                    </div>
+                    <label class="label">
+                        <span class="label-text-alt">💡 Tip: We'll automatically search for karaoke versions!</span>
+                    </label>
+                </div>
+            </form>
+
+            <!-- Search Results Container -->
+            <div id="pilot-search-results" class="mt-4">
+                <!-- Results will be loaded here via HTMX -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Playout Control Section -->
 <div class="mb-6">
     <h2 class="text-2xl font-bold mb-4">Playout Control</h2>

@@ -45,6 +45,7 @@ async def admin_page(request: Request):
             # Lets the template branch the playout-control card: Chromecast shows
             # device discovery, mpv shows a fixed local-HDMI output.
             "player_backend": settings.player_backend,
+            "pilot_mode": settings.pilot_mode,
         },
     )
 
