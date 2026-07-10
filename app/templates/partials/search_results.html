@@ -58,6 +58,15 @@
                         <input type="hidden" name="thumbnail_url" value="{{ video.thumbnail_url }}">
                         <input type="hidden" name="duration" value="{{ video.duration }}">
                         <input type="hidden" name="views" value="{{ video.views }}">
+                        {% if is_admin %}
+                        <input
+                            type="text"
+                            name="owner"
+                            placeholder="Who's this for?"
+                            class="input input-bordered input-sm w-32"
+                            required
+                        >
+                        {% endif %}
                         <button type="submit" class="btn btn-primary btn-sm">
                             + Queue
                         </button>

@@ -105,6 +105,7 @@ async def search(request: Request, query: str = Form(...)):
             {
                 "results": results,
                 "username": username,
+                "is_admin": is_admin,
                 "error": None,
             },
         )

@@ -297,6 +297,42 @@ def test_search_happy_path(monkeypatch):
     assert "Bohemian Rhapsody Karaoke" in response.text
 
 
+def test_search_happy_path_admin_shows_owner_field(monkeypatch):
+    """Admin search results include a per-card owner input."""
+    video = SimpleNamespace(
+        video_id=VALID_VIDEO_ID,
+        title="Bohemian Rhapsody Karaoke",
+        thumbnail_url="http://img/thumb.jpg",
+        duration=183,
+        views=1000,
+    )
+    monkeypatch.setattr(
+        search_module.youtube_service, "search", AsyncMock(return_value=[video])
+    )
+    c = _session_client("admin", True)
+    response = c.post("/search", data={"query": "queen"})
+    assert response.status_code == 200
+    assert 'name="owner"' in response.text
+
+
+def test_search_happy_path_non_admin_omits_owner_field(monkeypatch):
+    """Non-admin search results do not include an owner input."""
+    video = SimpleNamespace(
+        video_id=VALID_VIDEO_ID,
+        title="Bohemian Rhapsody Karaoke",
+        thumbnail_url="http://img/thumb.jpg",
+        duration=183,
+        views=1000,
+    )
+    monkeypatch.setattr(
+        search_module.youtube_service, "search", AsyncMock(return_value=[video])
+    )
+    c = _session_client("alice", False)
+    response = c.post("/search", data={"query": "queen"})
+    assert response.status_code == 200
+    assert 'name="owner"' not in response.text
+
+
 def test_search_youtube_error(monkeypatch):
     """A YouTubeError surfaces its user_message in the error partial."""
     monkeypatch.setattr(
