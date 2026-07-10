@@ -158,6 +158,11 @@ async def login(
     if not username:
         return RedirectResponse(url="/?error=Username+required", status_code=303)
 
+    if settings.pilot_mode and username.lower() != "admin":
+        return RedirectResponse(
+            url="/?error=Pilot+mode+active+-+admin+only", status_code=303
+        )
+
     is_admin = False
 
     # Check if admin login

@@ -114,6 +114,38 @@ def test_login_empty_username_redirects_with_error():
     assert "Username+required" in response.headers["location"]
 
 
+def test_login_pilot_mode_rejects_non_admin(monkeypatch):
+    """A non-admin login is rejected while pilot mode is active."""
+    monkeypatch.setattr(auth_module.settings, "pilot_mode", True)
+    response = client.post(
+        "/login", data={"username": "carol"}, follow_redirects=False
+    )
+    assert response.status_code == 303
+    assert "Pilot+mode+active" in response.headers["location"]
+
+
+def test_login_pilot_mode_allows_admin(monkeypatch, _fresh_admin_limiter):
+    """Admin login still succeeds while pilot mode is active."""
+    monkeypatch.setattr(auth_module.settings, "pilot_mode", True)
+    monkeypatch.setattr(auth_module.settings, "admin_password", "s3cret-pass")
+    response = client.post(
+        "/login",
+        data={"username": "admin", "password": "s3cret-pass"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin"
+
+
+def test_login_pilot_mode_off_allows_non_admin():
+    """Pilot mode off (the default) leaves normal login untouched."""
+    response = client.post(
+        "/login", data={"username": "carol"}, follow_redirects=False
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/app"
+
+
 def test_login_normal_user_sets_cookie():
     """A normal user login redirects to /app and sets the session cookie."""
     response = client.post("/login", data={"username": "carol"}, follow_redirects=False)
