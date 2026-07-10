@@ -730,6 +730,17 @@ def test_admin_page_pilot_mode_shows_search_card(_admin_mocks, monkeypatch):
     assert 'id="pilot-search-results"' in html
 
 
+def test_admin_page_pilot_mode_shows_modal_container(_admin_mocks, monkeypatch):
+    """The modal-container div exists so pilot-mode queue-add responses have
+    somewhere to swap into (hx-target="#modal-container" in
+    partials/search_results.html)."""
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "pilot_mode", True)
+    html = _admin_client().get("/admin/").text
+    assert 'id="modal-container"' in html
+
+
 def test_admin_page_pilot_mode_off_hides_search_card(_admin_mocks, monkeypatch):
     """The pilot-mode search card is absent when pilot_mode is off (default)."""
     from app.config import settings as app_settings

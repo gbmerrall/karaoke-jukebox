@@ -81,6 +81,11 @@
 </div>
 {% endif %}
 
+<!-- Modal container for queue-add responses from the pilot-mode search card
+     (success/error/rate-limit/duplicate/missing-owner messages rendered by
+     partials/modals.html via hx-target="#modal-container"). -->
+<div id="modal-container"></div>
+
 <!-- Playout Control Section -->
 <div class="mb-6">
     <h2 class="text-2xl font-bold mb-4">Playout Control</h2>

@@ -114,7 +114,7 @@ async def search(request: Request, query: str = Form(...)):
         return templates.TemplateResponse(
             request,
             "partials/search_results.html",
-            {"results": [], "error": e.user_message},
+            {"results": [], "error": e.user_message, "is_admin": is_admin},
         )
     except Exception as e:
         logger.error(f"Search error: {e}")
