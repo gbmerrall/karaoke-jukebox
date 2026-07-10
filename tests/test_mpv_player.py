@@ -535,3 +535,43 @@ def test_list_video_outputs_ignores_unreadable_status(tmp_path):
     # No status file at all - read_text() raises FileNotFoundError (an OSError).
     player = MpvPlayer(mpv_module=FakeMpvModule(), drm_base_path=tmp_path)
     assert player.list_video_outputs() == []
+
+
+# ---------------------------------------------------------------------------
+# Audio output enumeration
+# ---------------------------------------------------------------------------
+
+
+def test_list_audio_outputs_returns_mpv_device_list(make_backend):
+    """Audio outputs come straight from mpv's own audio_device_list property."""
+    player, handle = make_backend()
+    handle.audio_device_list = [
+        {"name": "alsa/sysdefault:CARD=iBassoDCSeries", "description": "USB DAC"},
+        {"name": "auto", "description": "Autoselect device"},
+    ]
+    assert player.list_audio_outputs() == [
+        {"name": "alsa/sysdefault:CARD=iBassoDCSeries", "description": "USB DAC"},
+        {"name": "auto", "description": "Autoselect device"},
+    ]
+
+
+def test_list_audio_outputs_empty_when_unavailable(make_backend):
+    """mpv unavailable (startup failed): no audio outputs to offer."""
+    player, handle = make_backend(init_error=RuntimeError("no DRM device"))
+    assert handle is None
+    assert player.list_audio_outputs() == []
+
+
+def test_list_audio_outputs_handles_query_error(make_backend, monkeypatch, caplog):
+    """A property access error is swallowed and logged, not raised."""
+    player, handle = make_backend()
+
+    def _raise(self):
+        raise RuntimeError("mpv IPC error")
+
+    monkeypatch.setattr(
+        type(handle), "audio_device_list", property(_raise), raising=False
+    )
+    with caplog.at_level("WARNING", logger="app.services.players.mpv_player"):
+        assert player.list_audio_outputs() == []
+    assert any("audio device list" in r.message.lower() for r in caplog.records)

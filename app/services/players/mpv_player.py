@@ -424,6 +424,29 @@ class MpvPlayer:
             )
         return outputs
 
+    def list_audio_outputs(self) -> List[Dict[str, str]]:
+        """Enumerate ALSA audio outputs mpv itself can see.
+
+        Queries the persistent handle's audio-device-list property (mpv
+        already talks to ALSA), so no aplay/system-tool dependency is needed.
+
+        Returns:
+            List of {"name": str, "description": str} dicts (mpv's own audio
+            device shape). Empty if mpv is unavailable or the query fails.
+        """
+        player = self._player
+        if player is None:
+            return []
+        try:
+            devices = player.audio_device_list
+        except Exception as e:
+            logger.warning(f"Failed to query mpv audio device list: {e}")
+            return []
+        return [
+            {"name": d.get("name", ""), "description": d.get("description", "")}
+            for d in devices or []
+        ]
+
     # ------------------------------------------------------------------
     # Idle screensaver
     # ------------------------------------------------------------------
