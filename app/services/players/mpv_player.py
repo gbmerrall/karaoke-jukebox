@@ -220,9 +220,7 @@ class MpvPlayer:
 
         if not ready:
             return (False, "Failed to initialize mpv with the selected output")
-        logger.info(
-            f"mpv output switched: {drm_device} {drm_connector} {audio_device}"
-        )
+        logger.info(f"mpv output switched: {drm_device} {drm_connector} {audio_device}")
         return (True, "")
 
     def shutdown(self) -> None:
