@@ -137,6 +137,7 @@ async def queue_video(
     thumbnail_url: str = Form(...),
     duration: int = Form(...),
     views: int = Form(...),
+    owner: str = Form(""),
 ):
     """
     Queue a video for playback.
@@ -155,6 +156,20 @@ async def queue_video(
                 "message": "You must be logged in to queue videos",
             },
         )
+
+    effective_username = username
+    if is_admin:
+        owner = owner.strip()
+        if not owner:
+            return templates.TemplateResponse(
+                request,
+                "partials/modals.html",
+                {
+                    "modal_type": "error",
+                    "message": "Enter who this song is for.",
+                },
+            )
+        effective_username = owner
 
     # Reject malformed video IDs before they touch the filesystem or yt-dlp.
     if not is_valid_video_id(video_id):
@@ -189,7 +204,7 @@ async def queue_video(
                 thumbnail_url,
                 duration,
                 views,
-                username,
+                effective_username,
             )
 
             return templates.TemplateResponse(
@@ -208,10 +223,10 @@ async def queue_video(
                 thumbnail_url=thumbnail_url,
                 duration=duration,
                 views=views,
-                username=username,
+                username=effective_username,
             )
 
-            logger.info(f"Queued (already downloaded): {title} by {username}")
+            logger.info(f"Queued (already downloaded): {title} by {effective_username}")
 
             return templates.TemplateResponse(
                 request,

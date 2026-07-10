@@ -117,9 +117,7 @@ def test_login_empty_username_redirects_with_error():
 def test_login_pilot_mode_rejects_non_admin(monkeypatch):
     """A non-admin login is rejected while pilot mode is active."""
     monkeypatch.setattr(auth_module.settings, "pilot_mode", True)
-    response = client.post(
-        "/login", data={"username": "carol"}, follow_redirects=False
-    )
+    response = client.post("/login", data={"username": "carol"}, follow_redirects=False)
     assert response.status_code == 303
     assert "Pilot+mode+active" in response.headers["location"]
 
@@ -139,9 +137,7 @@ def test_login_pilot_mode_allows_admin(monkeypatch, _fresh_admin_limiter):
 
 def test_login_pilot_mode_off_allows_non_admin():
     """Pilot mode off (the default) leaves normal login untouched."""
-    response = client.post(
-        "/login", data={"username": "carol"}, follow_redirects=False
-    )
+    response = client.post("/login", data={"username": "carol"}, follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"] == "/app"
 
@@ -406,6 +402,66 @@ def test_queue_video_already_downloaded(monkeypatch):
     assert response.status_code == 200
     assert "added to queue" in response.text
     add.assert_awaited_once()
+
+
+def _admin_queue_form(owner: str = "Bob") -> dict:
+    """Return valid form fields for an admin POST /queue/{id} request."""
+    form = _queue_form()
+    form["owner"] = owner
+    return form
+
+
+def test_queue_video_admin_uses_owner_name(monkeypatch):
+    """An admin queueing a song attributes it to the typed owner, not 'admin'."""
+    monkeypatch.setattr(search_module._queue_limiter, "allow", lambda key: True)
+    monkeypatch.setattr(
+        search_module.download_service, "is_downloaded", Mock(return_value=True)
+    )
+    add = AsyncMock()
+    monkeypatch.setattr(search_module.queue_manager, "add_to_queue", add)
+
+    c = _session_client("admin", True)
+    response = c.post(f"/queue/{VALID_VIDEO_ID}", data=_admin_queue_form("Bob"))
+
+    assert response.status_code == 200
+    assert "added to queue" in response.text
+    add.assert_awaited_once()
+    assert add.call_args.kwargs["username"] == "Bob"
+
+
+def test_queue_video_admin_missing_owner_rejected(monkeypatch):
+    """An admin queueing without an owner name gets a validation error, not a fallback."""
+    monkeypatch.setattr(search_module._queue_limiter, "allow", lambda key: True)
+    monkeypatch.setattr(
+        search_module.download_service, "is_downloaded", Mock(return_value=True)
+    )
+    add = AsyncMock()
+    monkeypatch.setattr(search_module.queue_manager, "add_to_queue", add)
+
+    c = _session_client("admin", True)
+    form = _queue_form()  # no "owner" key at all
+    response = c.post(f"/queue/{VALID_VIDEO_ID}", data=form)
+
+    assert response.status_code == 200
+    assert "Enter who this song is for." in response.text
+    add.assert_not_awaited()
+
+
+def test_queue_video_non_admin_owner_field_ignored(monkeypatch):
+    """A non-admin session cannot use the owner field to queue as someone else."""
+    monkeypatch.setattr(search_module._queue_limiter, "allow", lambda key: True)
+    monkeypatch.setattr(
+        search_module.download_service, "is_downloaded", Mock(return_value=True)
+    )
+    add = AsyncMock()
+    monkeypatch.setattr(search_module.queue_manager, "add_to_queue", add)
+
+    c = _session_client("alice", False)
+    response = c.post(f"/queue/{VALID_VIDEO_ID}", data=_admin_queue_form("Bob"))
+
+    assert response.status_code == 200
+    add.assert_awaited_once()
+    assert add.call_args.kwargs["username"] == "alice"
 
 
 def test_queue_video_not_downloaded(monkeypatch):
