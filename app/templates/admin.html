@@ -46,12 +46,33 @@
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         {% if player_backend == 'mpv' %}
-        <!-- Local HDMI output: mpv has no discoverable devices to pick.
-             Output selection (connector/audio) will be added here later. -->
+        <!-- Local HDMI output: video (drm_device+drm_connector) and audio
+             device are two independent choices, populated from
+             /admin/mpv/outputs and applied via /admin/mpv/output/select. -->
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h3 class="card-title text-lg">Output Device</h3>
                 <p class="text-sm text-gray-500">HDMI playout</p>
+                <label class="form-control w-full mt-2">
+                    <span class="label-text">Video output</span>
+                    <select id="mpv-video-select" class="select select-bordered w-full">
+                        <option value="">Loading...</option>
+                    </select>
+                </label>
+                <label class="form-control w-full mt-2">
+                    <span class="label-text">Audio output</span>
+                    <select id="mpv-audio-select" class="select select-bordered w-full">
+                        <option value="">Loading...</option>
+                    </select>
+                </label>
+                <button
+                    id="mpv-apply-btn"
+                    class="btn btn-primary btn-sm mt-2"
+                    onclick="applyMpvOutput()"
+                >
+                    Apply
+                </button>
+                <p id="mpv-output-status" class="text-sm mt-2"></p>
             </div>
         </div>
         {% else %}
@@ -190,6 +211,84 @@
     // discovery, so its playback controls are never gated on a selection.
     const PLAYER_BACKEND = "{{ player_backend }}";
 
+    // mpv output selection (video/audio) - only relevant for the mpv
+    // backend. Uses plain fetch (not hx-get) because the endpoints return
+    // JSON, matching the existing device-select fetch() pattern below
+    // rather than an HTMX HTML-swap.
+    function loadMpvOutputs() {
+        if (PLAYER_BACKEND !== 'mpv') {
+            return;
+        }
+        fetch('/admin/mpv/outputs')
+            .then(response => response.json())
+            .then(data => {
+                populateOutputSelect(
+                    'mpv-video-select',
+                    data.video,
+                    item => `${item.drm_device}|${item.drm_connector}`,
+                    item => item.label
+                );
+                populateOutputSelect(
+                    'mpv-audio-select',
+                    data.audio,
+                    item => item.name,
+                    item => item.description || item.name
+                );
+            })
+            .catch(err => console.error('Error loading mpv outputs:', err));
+    }
+
+    function populateOutputSelect(selectId, items, valueFn, labelFn) {
+        const select = document.getElementById(selectId);
+        if (!select) {
+            return;
+        }
+        if (!items || items.length === 0) {
+            select.innerHTML = '<option value="">No outputs detected</option>';
+            return;
+        }
+        select.innerHTML = items
+            .map(item => `<option value="${valueFn(item)}">${labelFn(item)}</option>`)
+            .join('');
+    }
+
+    function applyMpvOutput() {
+        const videoSelect = document.getElementById('mpv-video-select');
+        const audioSelect = document.getElementById('mpv-audio-select');
+        const status = document.getElementById('mpv-output-status');
+        const [drmDevice, drmConnector] = (videoSelect.value || '').split('|');
+        const audioDevice = audioSelect.value;
+        if (!drmDevice || !drmConnector || !audioDevice) {
+            status.textContent = 'Select a video and audio output first';
+            status.className = 'text-sm text-warning mt-2';
+            return;
+        }
+        fetch('/admin/mpv/output/select', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'drm_device=' + encodeURIComponent(drmDevice)
+                + '&drm_connector=' + encodeURIComponent(drmConnector)
+                + '&audio_device=' + encodeURIComponent(audioDevice),
+        })
+        .then(response => response.json())
+        .then(data => {
+            status.textContent = data.message;
+            status.className = data.success
+                ? 'text-sm text-success mt-2'
+                : 'text-sm text-error mt-2';
+        })
+        .catch(err => console.error('Error applying mpv output:', err));
+    }
+
+    function updateMpvApplyButton() {
+        const btn = document.getElementById('mpv-apply-btn');
+        if (!btn) {
+            return;
+        }
+        btn.disabled = isPlaying;
+        btn.title = isPlaying ? 'Cannot change output during playback' : '';
+    }
+
     // Track selected device and playback state
     let selectedDeviceUuid = null;
     let isPlaying = false;
@@ -222,6 +321,7 @@
                 if (wasPlaying !== isPlaying) {
                     console.log('Playback state changed:', isPlaying ? 'playing' : 'stopped');
                     updateScanButton();
+                    updateMpvApplyButton();
                 }
             })
             .catch(err => {
@@ -234,6 +334,10 @@
 
     // Do initial poll
     pollPlaybackStatus();
+
+    // Populate the mpv output dropdowns and disable Apply if already playing.
+    loadMpvOutputs();
+    updateMpvApplyButton();
 
     // Handle device scan responses
     document.body.addEventListener('htmx:afterSwap', function(event) {

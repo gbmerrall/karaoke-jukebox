@@ -596,6 +596,28 @@ def test_admin_page_chromecast_keeps_scan_and_gates_playback(_admin_mocks, monke
     assert "disabled" in _start_btn_tag(html)
 
 
+def test_admin_page_mpv_renders_output_selection_controls(_admin_mocks, monkeypatch):
+    """The mpv output card renders video/audio selects and an apply button."""
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "player_backend", "mpv")
+    html = _admin_client().get("/admin/").text
+    assert 'id="mpv-video-select"' in html
+    assert 'id="mpv-audio-select"' in html
+    assert 'id="mpv-apply-btn"' in html
+
+
+def test_admin_page_chromecast_omits_output_selection_controls(
+    _admin_mocks, monkeypatch
+):
+    """The mpv-only output controls do not render on the Chromecast backend."""
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "player_backend", "chromecast")
+    html = _admin_client().get("/admin/").text
+    assert 'id="mpv-video-select"' not in html
+
+
 def test_admin_non_admin_redirects():
     """An anonymous request to an admin route is redirected (303)."""
     response = client.get("/admin/", follow_redirects=False)
