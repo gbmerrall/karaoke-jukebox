@@ -26,7 +26,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # project imports
 from app.config import settings
@@ -94,6 +94,7 @@ class MpvPlayer:
         self._mpv_module = mpv_module
         self._drm_base_path = drm_base_path or Path("/sys/class/drm")
         self._player = None  # persistent mpv.MPV handle, created in startup()
+        self._current_options: Dict[str, str] = dict(MPV_OPTIONS)
         self._idle_path: Optional[Path] = None
 
         # Shared between the playout thread, mpv's event thread, and idle
@@ -118,6 +119,29 @@ class MpvPlayer:
         player logs, stays unavailable, and connect() returns False so the
         playout loop aborts cleanly while the admin UI stays reachable.
         """
+        player = self._build_handle(self._current_options)
+        if player is None:
+            self._player = None
+            return
+
+        self._player = player
+        logger.info(f"mpv initialized with options: {self._current_options}")
+
+        self._idle_path = self._resolve_idle_path()
+        if self._idle_path is not None:
+            self._arm_idle_timer()
+
+    def _build_handle(self, options: Dict[str, str]):
+        """Construct and wire a new mpv handle. Never raises.
+
+        Args:
+            options: Options passed to mpv.MPV(**options) - MPV_OPTIONS, or
+                a copy with drm_device/drm_connector/audio_device overridden.
+
+        Returns:
+            The new handle, or None on failure (logged; a partially
+            constructed handle is terminated so it releases the DRM device).
+        """
         player = None
         try:
             mpv_module = self._mpv_module
@@ -125,8 +149,9 @@ class MpvPlayer:
                 # Deferred import: requires libmpv (install the 'mpv' extra).
                 # ty can't resolve it in dev envs (the extra is Pi-only).
                 import mpv as mpv_module  # ty: ignore[unresolved-import]
-            player = mpv_module.MPV(**MPV_OPTIONS)
+            player = mpv_module.MPV(**options)
             player.event_callback("end-file")(self._on_end_file)
+            return player
         except Exception as e:
             logger.error(f"mpv initialization failed: {e}", exc_info=True)
             if player is not None:
@@ -136,15 +161,69 @@ class MpvPlayer:
                     player.terminate()
                 except Exception as term_error:
                     logger.warning(f"Error terminating failed mpv init: {term_error}")
-            self._player = None
-            return
+            return None
 
-        self._player = player
-        logger.info(f"mpv initialized with options: {MPV_OPTIONS}")
+    def select_output(
+        self, drm_device: str, drm_connector: str, audio_device: str
+    ) -> Tuple[bool, str]:
+        """Switch the local video/audio output, recreating the mpv handle.
 
-        self._idle_path = self._resolve_idle_path()
-        if self._idle_path is not None:
-            self._arm_idle_timer()
+        Rejected while a song is playing (tearing down the handle mid-song
+        would kill in-flight playback with no recovery). Allowed any time
+        the handle is idle or looping the screensaver. Not persisted: the
+        selection resets to MPV_OPTIONS on the next app restart.
+
+        The whole check-and-swap runs under _state_lock - the same lock
+        play() now captures self._player under - so a concurrent play()
+        either runs entirely against the old handle or entirely against the
+        new one, never a stale reference to a handle this call terminated.
+
+        Args:
+            drm_device: e.g. "/dev/dri/card0".
+            drm_connector: e.g. "HDMI-A-1".
+            audio_device: mpv audio-device string, e.g.
+                "alsa/sysdefault:CARD=iBassoDCSeries".
+
+        Returns:
+            (True, "") on success; (False, message) if rejected or the new
+            handle failed to initialize.
+        """
+        with self._state_lock:
+            if self._song_in_progress:
+                return (
+                    False,
+                    "Cannot change output during playback. Stop or wait "
+                    "for the current song to finish.",
+                )
+            self._cancel_idle_timer_locked()
+            old_player = self._player
+            new_options = dict(self._current_options)
+            new_options["drm_device"] = drm_device
+            new_options["drm_connector"] = drm_connector
+            new_options["audio_device"] = audio_device
+            new_player = self._build_handle(new_options)
+
+            if new_player is None:
+                ready = False
+            else:
+                if old_player is not None:
+                    try:
+                        old_player.terminate()
+                    except Exception as e:
+                        logger.warning(f"Error terminating replaced mpv handle: {e}")
+                self._player = new_player
+                self._current_options = new_options
+                ready = True
+
+        # Lock released: _arm_idle_timer() acquires it itself.
+        self._arm_idle_timer()
+
+        if not ready:
+            return (False, "Failed to initialize mpv with the selected output")
+        logger.info(
+            f"mpv output switched: {drm_device} {drm_connector} {audio_device}"
+        )
+        return (True, "")
 
     def shutdown(self) -> None:
         """Cancel timers and terminate the mpv handle. Called once at app exit."""
@@ -211,8 +290,7 @@ class MpvPlayer:
         Returns:
             The PlaybackOutcome. All exceptions are caught and become FAILED.
         """
-        player = self._player
-        if player is None:
+        if self._player is None:
             logger.error("play() called but mpv is unavailable")
             return PlaybackOutcome.FAILED
 
@@ -230,6 +308,11 @@ class MpvPlayer:
             self._song_in_progress = True
             self._cancel_idle_timer_locked()
             self._end_reason = None
+            # Captured under the same lock select_output() holds while
+            # swapping self._player, so a handle recreated concurrently with
+            # this call is never operated on via a stale, terminated
+            # reference (the pre-lock check above is just a fast path).
+            player = self._player
 
         try:
             player.loop_file = "no"

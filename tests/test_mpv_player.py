@@ -575,3 +575,73 @@ def test_list_audio_outputs_handles_query_error(make_backend, monkeypatch, caplo
     with caplog.at_level("WARNING", logger="app.services.players.mpv_player"):
         assert player.list_audio_outputs() == []
     assert any("audio device list" in r.message.lower() for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Output selection (video/audio switch)
+# ---------------------------------------------------------------------------
+
+
+def test_select_output_rejected_during_playback(make_backend):
+    """A song in progress blocks the switch and leaves the handle untouched."""
+    player, handle = make_backend()
+    _add_video()
+    thread, result, _, stop = _start_play(player)
+    assert player._load_confirmed.wait(2)
+    ok, message = player.select_output("/dev/dri/card0", "HDMI-A-1", "auto")
+    assert ok is False
+    assert "playback" in message.lower()
+    assert handle.terminated is False
+    stop.set()
+    thread.join(timeout=2)
+
+
+def test_select_output_recreates_handle_when_idle(make_backend):
+    """Selecting a new output while idle terminates the old handle and
+    builds a new one with the overridden options."""
+    player, handle = make_backend()
+    ok, message = player.select_output("/dev/dri/card0", "HDMI-A-1", "auto")
+    assert ok is True
+    assert message == ""
+    assert handle.terminated is True
+    new_handle = player._player
+    assert new_handle is not handle
+    assert new_handle.options["drm_device"] == "/dev/dri/card0"
+    assert new_handle.options["drm_connector"] == "HDMI-A-1"
+    assert new_handle.options["audio_device"] == "auto"
+    # Options carried over unchanged (e.g. vo) are still present.
+    assert new_handle.options["vo"] == "drm"
+
+
+def test_select_output_failure_keeps_old_handle(make_backend):
+    """If the new handle fails to init, the old handle stays in place."""
+    player, handle = make_backend()
+    player._mpv_module.init_error = RuntimeError("DRM device busy")
+    ok, message = player.select_output("/dev/dri/card0", "HDMI-A-1", "auto")
+    assert ok is False
+    assert "initialize" in message.lower()
+    assert player._player is handle
+    assert handle.terminated is False
+
+
+def test_select_output_rearms_idle_timer_after_success(make_backend):
+    """A successful switch re-arms the idle countdown on the new handle."""
+    player, _ = make_backend()
+    player.select_output("/dev/dri/card0", "HDMI-A-1", "auto")
+    assert player._idle_timer is not None
+
+
+def test_play_after_select_output_uses_the_new_handle(make_backend):
+    """A play() call started after a switch operates on the new handle, not
+    a stale reference to the terminated one."""
+    player, old_handle = make_backend()
+    player.select_output("/dev/dri/card0", "HDMI-A-1", "auto")
+    new_handle = player._player
+    _add_video()
+    thread, result, _, _ = _start_play(player)
+    assert player._load_confirmed.wait(2)
+    assert new_handle.play_calls  # the new handle was asked to load the song
+    assert old_handle.play_calls == []  # the old (terminated) handle was not
+    new_handle.fire_end_file(b"eof")
+    thread.join(timeout=2)
+    assert result["outcome"] is PlaybackOutcome.FINISHED
