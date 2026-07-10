@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     # None = disabled (black screen when idle).
     idle_video_path: Optional[Path] = None
 
+    # Single-admin-only operating mode: rejects non-admin login and exposes
+    # an admin search-and-queue-for-others card. Off by default.
+    pilot_mode: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
     )

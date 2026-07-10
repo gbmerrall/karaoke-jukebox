@@ -58,6 +58,26 @@ def test_get_video_path():
     )
 
 
+# Pilot mode
+
+
+def test_pilot_mode_defaults_false():
+    """pilot_mode is off unless explicitly enabled."""
+    settings = _make()
+    assert settings.pilot_mode is False
+
+
+def test_pilot_mode_env_var_true(monkeypatch):
+    """PILOT_MODE=true enables pilot mode."""
+    monkeypatch.setenv("PILOT_MODE", "true")
+    settings = Settings(
+        admin_password="a-real-password",
+        youtube_api_key="a-real-key",
+        secret_key=VALID_SECRET,
+    )
+    assert settings.pilot_mode is True
+
+
 # Docker detection
 
 
