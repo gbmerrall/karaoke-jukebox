@@ -101,6 +101,66 @@ async def select_device(request: Request, device_uuid: str = Form(...)):
         )
 
 
+@router.get("/mpv/outputs")
+async def list_mpv_outputs(request: Request):
+    """
+    List available local video/audio outputs (mpv backend only).
+
+    Returns:
+        JSON {"video": [...], "audio": [...]}; 404 on other backends.
+    """
+    require_admin(request)
+
+    if settings.player_backend != "mpv":
+        return JSONResponse({"video": [], "audio": []}, status_code=404)
+
+    return JSONResponse(
+        {
+            "video": playout_service.list_video_outputs(),
+            "audio": playout_service.list_audio_outputs(),
+        }
+    )
+
+
+@router.post("/mpv/output/select")
+async def select_mpv_output(
+    request: Request,
+    drm_device: str = Form(...),
+    drm_connector: str = Form(...),
+    audio_device: str = Form(...),
+):
+    """
+    Select the local video/audio output (mpv backend only).
+
+    Args:
+        drm_device: DRM device path, e.g. "/dev/dri/card0".
+        drm_connector: DRM connector name, e.g. "HDMI-A-1".
+        audio_device: mpv audio-device string.
+    """
+    username, _ = require_admin(request)
+
+    if settings.player_backend != "mpv":
+        return JSONResponse(
+            {
+                "success": False,
+                "message": "Output selection requires the mpv backend",
+            },
+            status_code=404,
+        )
+
+    logger.info(
+        f"mpv output selection by {username}: "
+        f"{drm_device} {drm_connector} {audio_device}"
+    )
+    success, message = playout_service.select_output(
+        drm_device, drm_connector, audio_device
+    )
+
+    if success:
+        return JSONResponse({"success": True, "message": "Output updated"})
+    return JSONResponse({"success": False, "message": message}, status_code=409)
+
+
 @router.post("/playback/start")
 async def start_playback(request: Request):
     """

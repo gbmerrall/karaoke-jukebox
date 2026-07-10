@@ -639,6 +639,97 @@ def test_admin_select_device_not_found(_admin_mocks):
     assert response.status_code == 404
 
 
+def test_admin_mpv_outputs_success(_admin_mocks, monkeypatch):
+    """The mpv outputs endpoint returns the backend's video/audio lists."""
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "player_backend", "mpv")
+    cc, _ = _admin_mocks
+    cc.list_video_outputs = Mock(
+        return_value=[
+            {
+                "drm_device": "/dev/dri/card0",
+                "drm_connector": "HDMI-A-1",
+                "label": "HDMI-A-1 (card0)",
+            }
+        ]
+    )
+    cc.list_audio_outputs = Mock(
+        return_value=[{"name": "auto", "description": "Autoselect device"}]
+    )
+    response = _admin_client().get("/admin/mpv/outputs")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["video"][0]["drm_connector"] == "HDMI-A-1"
+    assert body["audio"][0]["name"] == "auto"
+
+
+def test_admin_mpv_outputs_404_for_chromecast(_admin_mocks, monkeypatch):
+    """The mpv outputs endpoint is unavailable on the Chromecast backend."""
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "player_backend", "chromecast")
+    response = _admin_client().get("/admin/mpv/outputs")
+    assert response.status_code == 404
+
+
+def test_admin_select_mpv_output_success(_admin_mocks, monkeypatch):
+    """A successful output switch returns success:true."""
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "player_backend", "mpv")
+    cc, _ = _admin_mocks
+    cc.select_output = Mock(return_value=(True, ""))
+    response = _admin_client().post(
+        "/admin/mpv/output/select",
+        data={
+            "drm_device": "/dev/dri/card0",
+            "drm_connector": "HDMI-A-1",
+            "audio_device": "auto",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    cc.select_output.assert_called_once_with("/dev/dri/card0", "HDMI-A-1", "auto")
+
+
+def test_admin_select_mpv_output_rejected_during_playback(_admin_mocks, monkeypatch):
+    """A rejected switch (e.g. song playing) returns 409."""
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "player_backend", "mpv")
+    cc, _ = _admin_mocks
+    cc.select_output = Mock(
+        return_value=(False, "Cannot change output during playback.")
+    )
+    response = _admin_client().post(
+        "/admin/mpv/output/select",
+        data={
+            "drm_device": "/dev/dri/card0",
+            "drm_connector": "HDMI-A-1",
+            "audio_device": "auto",
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["success"] is False
+
+
+def test_admin_select_mpv_output_404_for_chromecast(_admin_mocks, monkeypatch):
+    """Output selection is unavailable on the Chromecast backend."""
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "player_backend", "chromecast")
+    response = _admin_client().post(
+        "/admin/mpv/output/select",
+        data={
+            "drm_device": "/dev/dri/card0",
+            "drm_connector": "HDMI-A-1",
+            "audio_device": "auto",
+        },
+    )
+    assert response.status_code == 404
+
+
 def test_admin_playback_start_empty_queue(_admin_mocks):
     """Starting playback with an empty queue returns 400."""
     cc, qm = _admin_mocks
