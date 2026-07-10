@@ -22,6 +22,7 @@ Threading and design rules (see the 2026-07-07 spec):
 # standard library
 import logging
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -79,16 +80,19 @@ class MpvPlayer:
 
     supports_discovery = False
 
-    def __init__(self, mpv_module=None):
+    def __init__(self, mpv_module=None, drm_base_path: Optional[Path] = None):
         """Initialize without touching libmpv (that happens in startup()).
 
         Args:
             mpv_module: Module-like object exposing an MPV class. None
                 (production) defers `import mpv` to startup(); tests inject a
                 fake module.
+            drm_base_path: Base sysfs path for DRM output enumeration.
+                Defaults to /sys/class/drm; tests point this at a fake tree.
         """
         self.selected_device_uuid: Optional[str] = None
         self._mpv_module = mpv_module
+        self._drm_base_path = drm_base_path or Path("/sys/class/drm")
         self._player = None  # persistent mpv.MPV handle, created in startup()
         self._idle_path: Optional[Path] = None
 
@@ -382,6 +386,43 @@ class MpvPlayer:
         logger.debug(f"mpv end-file: {reason}")
         with self._state_lock:
             self._end_reason = reason
+
+    def list_video_outputs(self) -> List[Dict[str, str]]:
+        """Enumerate connected DRM video outputs (one entry per HDMI port).
+
+        Walks /sys/class/drm/card*-*/status looking for connectors reporting
+        "connected". Each Raspberry Pi HDMI port is its own DRM card device
+        (not one card exposing multiple connectors), so device and connector
+        are always returned as a coupled pair describing one physical port.
+
+        Returns:
+            List of {"drm_device": str, "drm_connector": str, "label": str}
+            dicts, one per connected output. Empty if none are connected or
+            the sysfs tree is unavailable (e.g. running off the Pi).
+        """
+        outputs = []
+        base = self._drm_base_path
+        if not base.is_dir():
+            return outputs
+        for entry in sorted(base.glob("card*-*")):
+            match = re.match(r"^(card\d+)-(.+)$", entry.name)
+            if match is None:
+                continue
+            card, connector = match.group(1), match.group(2)
+            try:
+                status = (entry / "status").read_text().strip()
+            except OSError:
+                continue
+            if status != "connected":
+                continue
+            outputs.append(
+                {
+                    "drm_device": f"/dev/dri/{card}",
+                    "drm_connector": connector,
+                    "label": f"{connector} ({card})",
+                }
+            )
+        return outputs
 
     # ------------------------------------------------------------------
     # Idle screensaver

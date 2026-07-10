@@ -493,3 +493,45 @@ def test_satisfies_player_protocol():
 def test_normalize_reason_handles_all_forms(raw, expected):
     """Reasons arrive as bytes, str, or int codes depending on versions."""
     assert _normalize_reason(raw) == expected
+
+
+# ---------------------------------------------------------------------------
+# Video output enumeration
+# ---------------------------------------------------------------------------
+
+
+def _make_drm_entry(base: Path, name: str, status: str) -> None:
+    """Create a fake /sys/class/drm/<name>/status file under base."""
+    entry = base / name
+    entry.mkdir(parents=True)
+    (entry / "status").write_text(status)
+
+
+def test_list_video_outputs_returns_connected_connectors(tmp_path):
+    """Only 'connected' entries are returned, parsed into device+connector."""
+    _make_drm_entry(tmp_path, "card0-HDMI-A-1", "disconnected")
+    _make_drm_entry(tmp_path, "card1-HDMI-A-2", "connected")
+    player = MpvPlayer(mpv_module=FakeMpvModule(), drm_base_path=tmp_path)
+    outputs = player.list_video_outputs()
+    assert outputs == [
+        {
+            "drm_device": "/dev/dri/card1",
+            "drm_connector": "HDMI-A-2",
+            "label": "HDMI-A-2 (card1)",
+        }
+    ]
+
+
+def test_list_video_outputs_empty_when_sysfs_missing(tmp_path):
+    """A missing sysfs tree (e.g. running off the Pi) yields no outputs."""
+    player = MpvPlayer(mpv_module=FakeMpvModule(), drm_base_path=tmp_path / "missing")
+    assert player.list_video_outputs() == []
+
+
+def test_list_video_outputs_ignores_unreadable_status(tmp_path):
+    """An entry with no readable status file is skipped, not fatal."""
+    entry = tmp_path / "card2-HDMI-A-1"
+    entry.mkdir(parents=True)
+    # No status file at all - read_text() raises FileNotFoundError (an OSError).
+    player = MpvPlayer(mpv_module=FakeMpvModule(), drm_base_path=tmp_path)
+    assert player.list_video_outputs() == []
