@@ -61,6 +61,9 @@ chase them by editing Pyright config; run `uv sync` and/or defer to `ty` instead
 - `LOG_LEVEL` - Default: INFO
 - `PLAYER_BACKEND` - Playback backend: `chromecast` (default) or `mpv`
 - `IDLE_VIDEO_PATH` - mpv only: looped idle screensaver video (unset = disabled)
+- `PILOT_MODE` - Single-admin-only mode (default: false). When true, only the
+  admin account can log in; the admin panel gains a search-and-queue card for
+  queueing songs on behalf of whoever's turn it is.
 
 ### Make targets
 

@@ -189,6 +189,11 @@ PLAYER_BACKEND=mpv
 # Optional: video file looped as the idle screensaver. Unset = disabled
 # (black screen when idle).
 IDLE_VIDEO_PATH=./data/idle.mp4
+
+# Single-admin-only mode (default: false). When enabled, only the admin account
+# can log in, and the admin panel gains a search-and-queue card for queueing
+# songs on behalf of participants.
+PILOT_MODE=false
 ```
 
 **Where to put the idle video:** anywhere EXCEPT `data/videos/`. That directory
