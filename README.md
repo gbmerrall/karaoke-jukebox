@@ -204,6 +204,14 @@ path outside `data/videos/` works too, since `IDLE_VIDEO_PATH` is just a file
 path. Any format/resolution mpv can decode is fine - it plays on a loop, so a
 short clip (10-30 seconds) is plenty.
 
+**"Up next" overlay font:** while a song plays, mpv flashes "Up next: `<title>`
+- for `<owner>`" for the last 15 seconds, naming whoever's up next in the
+queue. It's rendered in Roboto, loaded from `data/Roboto-Regular.ttf` - like
+the idle video, this file is NOT committed to git and must be placed there
+manually on every fresh deployment. If it's missing, mpv falls back to its
+default font instead of failing (the startup log warns explicitly), so the
+overlay still works - just not in Roboto.
+
 On the Pi (or any Linux box with a free DRM output):
 
 ```bash
@@ -311,6 +319,8 @@ See `DEVELOPMENT.md` for the full contributor workflow.
   (the apt package is the incompatible 0.x API)
 - Black screen when idle is expected if `IDLE_VIDEO_PATH` is unset or the file
   is missing - the startup log says so explicitly
+- Overlay showing in the wrong font is expected if `data/Roboto-Regular.ttf`
+  is missing - the startup log says so explicitly ("Overlay font not found")
 
 ### Videos won't download
 - **Check if ffmpeg is installed**: Run `ffmpeg -version` in terminal

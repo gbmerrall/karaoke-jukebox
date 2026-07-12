@@ -54,6 +54,7 @@ POLL_INTERVAL = 0.2  # seconds between checks in the play() wait loops
 LOAD_TIMEOUT = 10.0  # seconds for mpv to confirm a file loaded (else FAILED)
 NEXT_UP_THRESHOLD = 15.0  # seconds of time-remaining that triggers the overlay
 NEXT_UP_DURATION = 15.0  # seconds the overlay stays on screen
+OSD_FONT_FILENAME = "Roboto-Regular.ttf"  # expected under osd_fonts_dir (data/)
 
 # libmpv numeric end-file reason codes (mpv_end_file_reason in client.h).
 _REASON_CODES = {0: "eof", 2: "stop", 3: "quit", 4: "error", 5: "redirect"}
@@ -139,6 +140,7 @@ class MpvPlayer:
 
         self._player = player
         logger.info(f"mpv initialized with options: {self._current_options}")
+        self._check_osd_font_available()
 
         self._idle_path = self._resolve_idle_path()
         if self._idle_path is not None:
@@ -613,6 +615,25 @@ class MpvPlayer:
     # ------------------------------------------------------------------
     # Idle screensaver
     # ------------------------------------------------------------------
+
+    def _check_osd_font_available(self) -> None:
+        """Warn once, at startup, if the "up next" overlay's font is missing.
+
+        Cosmetic only: mpv's libass silently falls back to a default font
+        when Roboto-Regular.ttf is absent from osd_fonts_dir, so the overlay
+        still renders - just not in Roboto. This never blocks startup or
+        playback; it only makes the gap visible in logs instead of only
+        discoverable by eyeballing the overlay on a TV. Font is not
+        committed to git (like IDLE_VIDEO_PATH, it's a gitignored data/
+        runtime asset) - see CLAUDE.md's Troubleshooting Notes.
+        """
+        font_path = Path(self._current_options["osd_fonts_dir"]) / OSD_FONT_FILENAME
+        if not font_path.exists():
+            logger.warning(
+                f'Overlay font not found: {font_path} - the "up next" overlay '
+                "will render in mpv's default font instead of Roboto. Copy "
+                f"{OSD_FONT_FILENAME} into data/ to fix."
+            )
 
     def _resolve_idle_path(self) -> Optional[Path]:
         """Validate the configured screensaver video (warned once, at startup).

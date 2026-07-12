@@ -476,6 +476,30 @@ def test_shutdown_cancels_timer_and_terminates(make_backend):
 
 
 # ---------------------------------------------------------------------------
+# "Up next" overlay OSD font check
+# ---------------------------------------------------------------------------
+
+
+def test_startup_warns_when_osd_font_missing(make_backend, caplog):
+    """No Roboto-Regular.ttf in data/: a startup warning names the fallback."""
+    with caplog.at_level("WARNING", logger="app.services.players.mpv_player"):
+        make_backend()
+    assert any(
+        "Overlay font not found" in record.message for record in caplog.records
+    ), "expected a startup warning about the missing overlay font"
+
+
+def test_startup_no_warning_when_osd_font_present(tmp_path, make_backend, caplog):
+    """A Roboto-Regular.ttf already in data/: no warning fires."""
+    (tmp_path / "Roboto-Regular.ttf").write_bytes(b"fake font bytes")
+    with caplog.at_level("WARNING", logger="app.services.players.mpv_player"):
+        make_backend()
+    assert not any(
+        "Overlay font not found" in record.message for record in caplog.records
+    )
+
+
+# ---------------------------------------------------------------------------
 # Availability and protocol conformance
 # ---------------------------------------------------------------------------
 
