@@ -32,14 +32,16 @@ class FakePlayer:
         self.selected_device_uuid = "fake-uuid"
         self.cleaned_up = False
         self.played = []
+        self.next_up_texts = []
         self.started_up = False
         self.shut_down = False
 
     def connect(self):
         return self.connect_ok
 
-    def play(self, video_id, skip_event, stop_event):
+    def play(self, video_id, skip_event, stop_event, next_up_text=None):
         self.played.append(video_id)
+        self.next_up_texts.append(next_up_text)
         return self.outcomes.pop(0)
 
     def cleanup(self):
@@ -397,6 +399,32 @@ def test_finished_removes_item_and_resets_failures():
     assert player.played == ["dQw4w9WgXcQ"]
 
 
+def test_next_up_text_includes_title_and_owner_when_second_song_queued():
+    """A second queued song's title/owner are passed as next_up_text."""
+    player = FakePlayer([PlaybackOutcome.FINISHED])
+    service = PlayoutService(player)
+    first = _item(1)
+    second = {"id": 2, "video_id": "abc123", "title": "Second Song", "username": "Bob"}
+    calls = {"n": 0}
+
+    def side_effect():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return [first, second]
+        service.stop_requested.set()
+        return []
+
+    with patch.object(service, "_get_queue_sync", side_effect=side_effect):
+        _run_loop(service)
+    assert player.next_up_texts == ["Up next: Second Song — for Bob"]
+
+
+def test_next_up_text_none_when_last_song_in_queue():
+    """The last (only) song in the queue gets no next_up_text."""
+    service, _, _ = _run_one_song(PlaybackOutcome.FINISHED)
+    assert service.player.next_up_texts == [None]
+
+
 def test_skipped_removes_item():
     """SKIPPED removes the row."""
     _, update_mock, remove_mock = _run_one_song(PlaybackOutcome.SKIPPED, qid=3)
@@ -527,6 +555,18 @@ async def test_sync_bridges_against_real_loop(initialized_db):
 
     remaining = await queue_manager.get_queue()
     assert all(item["id"] != qid for item in remaining)
+
+
+async def test_get_queue_sync_includes_username(initialized_db):
+    """_get_queue_sync's SELECT includes username (needed for next_up_text)."""
+    service = PlayoutService(FakePlayer())
+    loop = asyncio.get_running_loop()
+    service.set_event_loop(loop)
+
+    await _insert_song(username="alice")
+
+    rows = await asyncio.to_thread(service._get_queue_sync)
+    assert rows[0]["username"] == "alice"
 
 
 def test_bridges_without_loop_raise():

@@ -259,12 +259,22 @@ class PlayoutService:
                 queue_id = item["id"]
                 title = item["title"]
 
+                next_up_text = None
+                if len(queue) > 1:
+                    next_item = queue[1]
+                    next_up_text = (
+                        f"Up next: {next_item['title']} — for {next_item['username']}"
+                    )
+
                 logger.info(f"Playing: {title}")
                 self._update_status_sync(queue_id, "playing")
 
                 try:
                     outcome = self.player.play(
-                        item["video_id"], self.skip_requested, self.stop_requested
+                        item["video_id"],
+                        self.skip_requested,
+                        self.stop_requested,
+                        next_up_text,
                     )
                 except Exception as e:
                     # Backends must catch their own errors; this is the last line of
@@ -336,7 +346,7 @@ class PlayoutService:
             async def get_queue():
                 async with get_db() as db:
                     cursor = await db.execute(
-                        "SELECT id, video_id, title FROM queue "
+                        "SELECT id, video_id, title, username FROM queue "
                         "WHERE status != 'completed' ORDER BY added_at ASC"
                     )
                     rows = await cursor.fetchall()
