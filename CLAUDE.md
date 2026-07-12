@@ -337,6 +337,8 @@ Auto-appends "karaoke" to search queries. Uses YouTube Data API v3 with:
 
 **Session issues**: Session cookies are signed with `SECRET_KEY`. Changing the key invalidates all sessions.
 
+**"mpv overlay shows wrong font"**: The mpv backend's "up next" overlay uses `data/Roboto-Regular.ttf` for on-screen text. This file is NOT committed to git (it lives in the gitignored `data/` directory) and must be manually placed there on any fresh deployment. If missing, mpv's libass falls back to a default font rather than failing, so the overlay still works but not in Roboto.
+
 ## Dependencies
 
 **Runtime** (declared in `pyproject.toml` under `[project].dependencies`, pinned in `uv.lock`):
