@@ -214,6 +214,22 @@ def test_play_finished():
     assert kwargs["stream_type"] == "BUFFERED"
 
 
+def test_play_accepts_and_ignores_next_up_text():
+    """next_up_text is accepted (Player protocol) but has no effect."""
+    cast = _make_fake_cast()
+    player = _connected_player(cast)
+    skip_event, stop_event = _events()
+    with patch("app.services.players.chromecast_player.time.sleep", MagicMock()):
+        outcome = player.play(
+            "dQw4w9WgXcQ",
+            skip_event,
+            stop_event,
+            next_up_text="Up next: Song — for Bob",
+        )
+    assert outcome is PlaybackOutcome.FINISHED
+    cast.play_media.assert_called_once()
+
+
 def test_play_error_maps_to_failed():
     """idle_reason ERROR maps to FAILED."""
     cast = _make_fake_cast()

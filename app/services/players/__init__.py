@@ -67,6 +67,7 @@ class Player(Protocol):
         video_id: str,
         skip_event: threading.Event,
         stop_event: threading.Event,
+        next_up_text: Optional[str] = None,
     ) -> PlaybackOutcome:
         """Play one video, blocking until there is an outcome.
 
@@ -79,6 +80,10 @@ class Player(Protocol):
             video_id: YouTube video id of a previously downloaded file.
             skip_event: Set by the controller when an admin skips the song.
             stop_event: Set by the controller when playback is stopped.
+            next_up_text: Optional display string for the next queued song
+                (e.g. "Up next: Song — for Alice"), or None when this is the
+                last song in the queue. Backends without overlay support
+                (e.g. Chromecast) accept it and never act on it.
 
         Returns:
             The PlaybackOutcome describing how playback ended. Implementations

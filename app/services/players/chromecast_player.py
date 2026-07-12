@@ -194,6 +194,7 @@ class ChromecastPlayer:
         video_id: str,
         skip_event: threading.Event,
         stop_event: threading.Event,
+        next_up_text: Optional[str] = None,
     ) -> PlaybackOutcome:
         """Cast one video and block until playback ends one way or another.
 
@@ -201,6 +202,9 @@ class ChromecastPlayer:
             video_id: YouTube id of a downloaded video in data/videos/.
             skip_event: Set by the controller to skip; cleared here when honored.
             stop_event: Set by the controller to stop; never cleared here.
+            next_up_text: Ignored. Chromecast has no on-screen overlay support;
+                this parameter exists only to satisfy the shared Player
+                protocol so callers can pass it unconditionally.
 
         Returns:
             The PlaybackOutcome. All exceptions are caught and become FAILED.
