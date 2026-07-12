@@ -50,6 +50,8 @@ class FakeMpvHandle:
         self.commands = []
         self.terminated = False
         self.handlers = {}
+        self.observers = {}
+        self.show_text_calls = []  # list of (text, duration) tuples
         self.auto_load = True
 
     def event_callback(self, name):
@@ -58,6 +60,16 @@ class FakeMpvHandle:
             return fn
 
         return decorator
+
+    def property_observer(self, name):
+        def decorator(fn):
+            self.observers[name] = fn
+            return fn
+
+        return decorator
+
+    def show_text(self, text, duration=None):
+        self.show_text_calls.append((text, duration))
 
     def play(self, path):
         self.play_calls.append((path, self.loop_file))
@@ -85,6 +97,10 @@ class FakeMpvHandle:
         self.handlers["end-file"](
             _FakeEvent({"event": b"end-file", "reason": reason, "playlist_entry_id": 1})
         )
+
+    def fire_time_remaining(self, value):
+        """Deliver a time-remaining property change (mpv event thread stand-in)."""
+        self.observers["time-remaining"]("time-remaining", value)
 
 
 class FakeMpvModule:
@@ -167,6 +183,24 @@ def _start_play(player, video_id="vid1"):
 
     def worker():
         result["outcome"] = player.play(video_id, skip, stop)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    return thread, result, skip, stop
+
+
+def _start_play_with_next_up(player, video_id="vid1", next_up_text=None):
+    """Run play() on a worker thread with a next_up_text argument.
+
+    Returns:
+        (thread, result_dict, skip_event, stop_event); result_dict['outcome']
+        holds the PlaybackOutcome once the thread finishes.
+    """
+    skip, stop = threading.Event(), threading.Event()
+    result = {}
+
+    def worker():
+        result["outcome"] = player.play(video_id, skip, stop, next_up_text)
 
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
@@ -670,3 +704,80 @@ def test_play_after_select_output_uses_the_new_handle(make_backend):
     new_handle.fire_end_file(b"eof")
     thread.join(timeout=2)
     assert result["outcome"] is PlaybackOutcome.FINISHED
+
+
+# ---------------------------------------------------------------------------
+# "Up next" overlay
+# ---------------------------------------------------------------------------
+
+
+def test_build_handle_registers_time_remaining_observer(make_backend):
+    """Every built handle gets a time-remaining observer, like end-file."""
+    player, handle = make_backend()
+    assert "time-remaining" in handle.observers
+
+
+def test_osd_font_options_set(make_backend):
+    """MPV_OPTIONS carries the bundled Roboto font, resolved via settings."""
+    player, handle = make_backend()
+    assert handle.options["osd_font"] == "Roboto"
+    assert handle.options["osd_font_size"] == 48
+    assert handle.options["osd_fonts_dir"] == str(settings.get_videos_dir().parent)
+
+
+def test_overlay_shown_once_at_threshold(make_backend):
+    """The overlay fires once time-remaining first drops to the threshold."""
+    player, handle = make_backend()
+    _add_video()
+    thread, result, _, _ = _start_play_with_next_up(
+        player, next_up_text="Up next: Song — for Bob"
+    )
+    assert player._load_confirmed.wait(2)
+    handle.fire_time_remaining(20)
+    assert handle.show_text_calls == []
+    handle.fire_time_remaining(15)
+    assert handle.show_text_calls == [("Up next: Song — for Bob", 15000)]
+    handle.fire_time_remaining(10)  # still above zero, must not fire again
+    assert handle.show_text_calls == [("Up next: Song — for Bob", 15000)]
+    handle.fire_end_file(b"eof")
+    thread.join(timeout=2)
+    assert result["outcome"] is PlaybackOutcome.FINISHED
+
+
+def test_overlay_not_shown_when_no_next_song(make_backend):
+    """next_up_text=None (last song in queue) never triggers show_text."""
+    player, handle = make_backend()
+    _add_video()
+    thread, result, _, _ = _start_play_with_next_up(player, next_up_text=None)
+    assert player._load_confirmed.wait(2)
+    handle.fire_time_remaining(5)
+    assert handle.show_text_calls == []
+    handle.fire_end_file(b"eof")
+    thread.join(timeout=2)
+
+
+def test_overlay_ignores_none_time_remaining(make_backend):
+    """A None time-remaining value (no duration data yet) is a no-op."""
+    player, handle = make_backend()
+    _add_video()
+    thread, result, _, _ = _start_play_with_next_up(
+        player, next_up_text="Up next: Song — for Bob"
+    )
+    assert player._load_confirmed.wait(2)
+    handle.fire_time_remaining(None)
+    assert handle.show_text_calls == []
+    handle.fire_end_file(b"eof")
+    thread.join(timeout=2)
+
+
+def test_overlay_silent_when_not_playing_a_song():
+    """The observer callback is a no-op outside an active song (e.g. idle)."""
+    player = MpvPlayer(mpv_module=FakeMpvModule())
+    player.startup()
+    handle = player._player
+    with player._state_lock:
+        player._next_up_text = "Up next: Song — for Bob"
+        player._song_in_progress = False
+    player._on_time_remaining("time-remaining", 5)
+    assert handle.show_text_calls == []
+    player.shutdown()

@@ -44,11 +44,16 @@ MPV_OPTIONS = {
     "hwdec": "v4l2m2m",
     "audio_device": "alsa/sysdefault:CARD=iBassoDCSeries",
     "idle": "yes",  # keep the handle alive with nothing loaded
+    "osd_fonts_dir": str(settings.get_videos_dir().parent),  # data/
+    "osd_font": "Roboto",
+    "osd_font_size": 48,
 }
 
 IDLE_DELAY = 15.0  # seconds of nothing playing before the screensaver starts
 POLL_INTERVAL = 0.2  # seconds between checks in the play() wait loops
 LOAD_TIMEOUT = 10.0  # seconds for mpv to confirm a file loaded (else FAILED)
+NEXT_UP_THRESHOLD = 15.0  # seconds of time-remaining that triggers the overlay
+NEXT_UP_DURATION = 15.0  # seconds the overlay stays on screen
 
 # libmpv numeric end-file reason codes (mpv_end_file_reason in client.h).
 _REASON_CODES = {0: "eof", 2: "stop", 3: "quit", 4: "error", 5: "redirect"}
@@ -95,6 +100,12 @@ class MpvPlayer:
         self._drm_base_path = drm_base_path or Path("/sys/class/drm")
         self._player = None  # persistent mpv.MPV handle, created in startup()
         self._current_options: Dict[str, str] = dict(MPV_OPTIONS)
+        # osd_fonts_dir depends on settings.data_dir, which can be overridden
+        # after this module is imported (tests monkeypatch it; a custom
+        # DATA_DIR env var also only takes effect at Settings() construction,
+        # before this class exists) - resolve it now rather than freezing
+        # the value baked into the MPV_OPTIONS module constant above.
+        self._current_options["osd_fonts_dir"] = str(settings.get_videos_dir().parent)
         self._idle_path: Optional[Path] = None
 
         # Shared between the playout thread, mpv's event thread, and idle
@@ -103,6 +114,8 @@ class MpvPlayer:
         self._idle_timer: Optional[threading.Timer] = None
         self._song_in_progress = False
         self._end_reason: Optional[str] = None  # last recorded end-file reason
+        self._next_up_text: Optional[str] = None  # display text for the next song
+        self._next_up_shown = False  # whether this song's overlay already fired
 
         # Set once play() has confirmed its file is the one mpv loaded.
         # Exists for observability (tests synchronize on it); play() polls.
@@ -151,6 +164,7 @@ class MpvPlayer:
                 import mpv as mpv_module  # ty: ignore[unresolved-import]
             player = mpv_module.MPV(**options)
             player.event_callback("end-file")(self._on_end_file)
+            player.property_observer("time-remaining")(self._on_time_remaining)
             return player
         except Exception as e:
             logger.error(f"mpv initialization failed: {e}", exc_info=True)
@@ -311,6 +325,7 @@ class MpvPlayer:
         video_id: str,
         skip_event: threading.Event,
         stop_event: threading.Event,
+        next_up_text: Optional[str] = None,
     ) -> PlaybackOutcome:
         """Play one downloaded video, blocking until there is an outcome.
 
@@ -318,6 +333,9 @@ class MpvPlayer:
             video_id: YouTube id of a downloaded video in data/videos/.
             skip_event: Set by the controller to skip; cleared here when honored.
             stop_event: Set by the controller to stop; never cleared here.
+            next_up_text: Optional display string for the next queued song
+                (e.g. "Up next: Song — for Alice"), or None if this is the
+                last song in the queue.
 
         Returns:
             The PlaybackOutcome. All exceptions are caught and become FAILED.
@@ -340,6 +358,8 @@ class MpvPlayer:
             self._song_in_progress = True
             self._cancel_idle_timer_locked()
             self._end_reason = None
+            self._next_up_text = next_up_text
+            self._next_up_shown = False
             # Captured under the same lock select_output() holds while
             # swapping self._player, so a handle recreated concurrently with
             # this call is never operated on via a stale, terminated
@@ -501,6 +521,34 @@ class MpvPlayer:
         logger.debug(f"mpv end-file: {reason}")
         with self._state_lock:
             self._end_reason = reason
+
+    def _on_time_remaining(self, _name, value) -> None:
+        """Show the "up next" overlay once time-remaining drops to the threshold.
+
+        Runs on mpv's event thread (like _on_end_file): only touches state
+        under _state_lock and never raises. Silent whenever a song is not
+        actively playing (e.g. during the idle screensaver, when
+        _song_in_progress is False) or when there is no next song
+        (next_up_text is None, set by play()'s caller for the last queue row).
+
+        Args:
+            _name: Property name ("time-remaining"), unused.
+            value: Seconds remaining, or None when mpv has no duration data
+                yet (e.g. just after a file starts loading).
+        """
+        with self._state_lock:
+            if not self._song_in_progress or self._next_up_shown:
+                return
+            text = self._next_up_text
+            if text is None or value is None or value > NEXT_UP_THRESHOLD:
+                return
+            self._next_up_shown = True
+            player = self._player
+        if player is not None:
+            try:
+                player.show_text(text, duration=int(NEXT_UP_DURATION * 1000))
+            except Exception as e:
+                logger.warning(f"Failed to show next-up overlay: {e}")
 
     def list_video_outputs(self) -> List[Dict[str, str]]:
         """Enumerate connected DRM video outputs (one entry per HDMI port).
