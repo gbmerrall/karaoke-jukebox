@@ -632,7 +632,7 @@ requires-dist = [
     { name = "python-mpv", marker = "extra == 'mpv'", specifier = ">=1.0" },
     { name = "python-multipart" },
     { name = "uvicorn", extras = ["standard"] },
-    { name = "yt-dlp", extras = ["default"], specifier = ">=2026.6.9" },
+    { name = "yt-dlp", extras = ["default"], specifier = ">=2026.7.4" },
 ]
 provides-extras = ["mpv"]
 

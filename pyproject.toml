@@ -18,7 +18,7 @@ dependencies = [
     "uvicorn[standard]",
     # yt-dlp is the most fragile dependency; the [default] extra pulls the EJS
     # JS-challenge solver. Keep it current (see `make preflight`).
-    "yt-dlp[default]>=2026.6.9",
+    "yt-dlp[default]>=2026.7.4",
 ]
 
 [project.optional-dependencies]
