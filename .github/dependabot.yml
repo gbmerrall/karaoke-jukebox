@@ -33,15 +33,19 @@ updates:
       prefix: "deps"
     groups:
       # yt-dlp on its own - it bumps often and is deploy-critical.
+      # Wildcard (not "yt-dlp") because pyproject.toml declares "yt-dlp[default]" -
+      # Dependabot matches patterns against the dependency name including its PEP
+      # 508 extras, so an exact "yt-dlp" pattern never matches and the update
+      # silently falls through into python-deps instead.
       yt-dlp:
         patterns:
-          - "yt-dlp"
+          - "yt-dlp*"
       # Batch the rest of the runtime/dev churn into one PR per week.
       python-deps:
         patterns:
           - "*"
         exclude-patterns:
-          - "yt-dlp"
+          - "yt-dlp*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
