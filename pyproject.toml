@@ -35,7 +35,7 @@ mpv = ["python-mpv>=1.0"]
 
 [dependency-groups]
 dev = [
-    "httpx2>=2.5.0",
+    "httpx2>=2.7.0",
     "pytest",
     "pytest-asyncio",
     "pytest-cov",
