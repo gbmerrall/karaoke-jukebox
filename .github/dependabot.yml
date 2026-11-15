@@ -13,10 +13,14 @@
 #              checkout, etc.) current.
 #
 # yt-dlp drift: the primary motivation. yt-dlp breaks when YouTube changes, and
-# the fix is almost always a version bump. Dependabot opens a PR as soon as a new
-# yt-dlp release lands; the daily canary workflow tells you WHEN a bump is needed,
-# Dependabot provides the bump. yt-dlp is grouped on its own so its (frequent)
-# updates do not get buried in a batch with everything else.
+# the fix is almost always a version bump.
+#
+# KNOWN LIMITATION: Dependabot cannot currently update uv dependencies declared
+# with extras - yt-dlp[default] and uvicorn[standard] here - because it fails to
+# match them to their uv.lock entries (dependabot/dependabot-core#16431). Until
+# that is fixed, the daily canary workflow (yt-dlp-canary.yml) upgrades both and
+# opens the bump PR itself. The yt-dlp group below is kept so Dependabot takes
+# over again once the issue is resolved.
 
 version: 2
 updates:
