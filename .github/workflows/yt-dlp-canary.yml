@@ -19,6 +19,8 @@ on:
 jobs:
   canary:
     runs-on: ubuntu-latest
+    # A healthy run takes about a minute; fail fast if apt or YouTube hangs.
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v7

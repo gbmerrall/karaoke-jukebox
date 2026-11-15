@@ -42,10 +42,23 @@ dev = [
     "ruff",
 ]
 
+[tool.ruff.lint]
+# Pin the rule set explicitly so a ruff upgrade cannot change what CI enforces.
+# These are ruff's defaults up to 0.15; 0.16 widened the defaults from 59 to 413
+# rules, which turned every dependency PR red. Widen this list deliberately.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.format]
+# ruff 0.16+ also formats Python code blocks inside Markdown. The docs contain
+# illustrative fragments, not real modules, so leave them alone.
+exclude = ["*.md"]
+
 [tool.pytest.ini_options]
 # asyncio_mode = "auto" lets us write `async def test_...` without decorating
 # every test with @pytest.mark.asyncio.
 asyncio_mode = "auto"
+# Set explicitly: pytest-asyncio warns when unset and will change the default.
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "integration: tests that hit the live network (yt-dlp / YouTube). Opt-in via --run-integration.",
