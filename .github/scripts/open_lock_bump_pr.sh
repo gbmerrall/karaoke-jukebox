@@ -5,8 +5,8 @@
 #
 # Assumes: it runs in the canary job AFTER the upgraded lockfile has passed the
 # tests, with GH_TOKEN set and `contents: write` + `pull-requests: write`.
-# Exits 0 without doing anything when uv.lock is unchanged, or when the bump
-# branch already carries exactly this lockfile.
+# Exits 0 without doing anything when uv.lock is unchanged, or when an open PR
+# on the bump branch already carries exactly this lockfile.
 set -euo pipefail
 
 BRANCH="deps/canary-lock-bump"
@@ -41,8 +41,14 @@ else
 fi
 echo "Lockfile changed: $title"
 
-if git fetch --quiet origin "$BRANCH" 2>/dev/null && git diff --quiet FETCH_HEAD -- uv.lock; then
-  echo "Branch $BRANCH already has this lockfile: leaving the existing PR alone."
+open_pr="$(gh pr list --head "$BRANCH" --base "$BASE" --state open --json number --jq '.[0].number // empty')"
+
+# Skip only when a PR is actually open: a leftover branch without one (merged
+# or closed PR, or a failed earlier run) must not block a new PR.
+if [ -n "$open_pr" ] \
+    && git fetch --quiet origin "$BRANCH" 2>/dev/null \
+    && git diff --quiet FETCH_HEAD -- uv.lock; then
+  echo "Pull request #$open_pr already has this lockfile: leaving it alone."
   exit 0
 fi
 
@@ -68,7 +74,6 @@ git add uv.lock
 git commit --quiet -m "$title"
 git push --quiet --force origin "$BRANCH"
 
-open_pr="$(gh pr list --head "$BRANCH" --base "$BASE" --state open --json number --jq '.[0].number // empty')"
 if [ -n "$open_pr" ]; then
   gh pr edit "$open_pr" --title "$title" --body "$body"
   echo "Updated pull request #$open_pr."
