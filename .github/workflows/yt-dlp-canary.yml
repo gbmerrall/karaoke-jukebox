@@ -1,11 +1,24 @@
 name: yt-dlp canary
 
-# Daily early-warning system for the most fragile dependency.
+# Daily early-warning system for the most fragile dependency, and the source of
+# its version bumps.
 #
-# This job bumps yt-dlp and runs the live integration test that downloads a
-# known-good clip from YouTube. A RED run means: YouTube changed and yt-dlp
-# needs a bump (locally: `make preflight` then rebuild). The scheduled-workflow
-# failure email IS the alert.
+# This job upgrades yt-dlp in uv.lock and runs the live integration test that
+# downloads a known-good clip from YouTube.
+#
+# - GREEN with a changed lockfile: the job opens (or refreshes) a pull request
+#   on the deps/canary-lock-bump branch. Merge it to ship the bump.
+# - RED: YouTube changed and even the newest yt-dlp cannot download. No PR is
+#   opened. The scheduled-workflow failure email IS the alert.
+#
+# Why the job opens the PR itself: Dependabot cannot update uv dependencies
+# declared with extras, such as yt-dlp[default] and uvicorn[standard]
+# (dependabot/dependabot-core#16431). uvicorn is upgraded here for the same
+# reason. Once that issue is fixed, the "Open pull request" step and the
+# uvicorn upgrade can be removed.
+#
+# Requires the repository setting "Allow GitHub Actions to create and approve
+# pull requests" (Settings > Actions > General).
 #
 # No repo secrets are required: the test uses dummy env vars from conftest.py
 # and does not call the YouTube Data API.
@@ -15,6 +28,10 @@ on:
     # 07:00 UTC daily
     - cron: '0 7 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   canary:
@@ -38,10 +55,23 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Install dependencies and bump yt-dlp to latest
-        # --upgrade-package pulls the newest yt-dlp (updating uv.lock in-job)
-        # while installing the rest of the environment, including the dev group.
-        run: uv sync --upgrade-package yt-dlp
+      - name: Install dependencies and upgrade yt-dlp and uvicorn
+        # --upgrade-package pulls the newest release of each (updating uv.lock
+        # in-job) while installing the rest of the environment, including the
+        # dev group.
+        run: uv sync --upgrade-package yt-dlp --upgrade-package uvicorn
 
       - name: Run yt-dlp canary (live download)
         run: uv run pytest -m integration --run-integration
+
+      - name: Lint and run fast tests against the upgraded lockfile
+        # CI does not start on pull requests opened by a workflow, so the
+        # checks it would run happen here before the PR is opened.
+        run: |
+          uv run ruff check .
+          uv run pytest
+
+      - name: Open pull request if the lockfile changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/open_lock_bump_pr.sh yt-dlp uvicorn
