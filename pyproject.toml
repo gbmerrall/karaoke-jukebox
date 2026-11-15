@@ -57,6 +57,8 @@ exclude = ["*.md"]
 # asyncio_mode = "auto" lets us write `async def test_...` without decorating
 # every test with @pytest.mark.asyncio.
 asyncio_mode = "auto"
+# Set explicitly: pytest-asyncio warns when unset and will change the default.
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "integration: tests that hit the live network (yt-dlp / YouTube). Opt-in via --run-integration.",
